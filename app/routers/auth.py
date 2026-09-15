@@ -3,7 +3,10 @@
 # It handles signing up, logging in, logging out, and showing user details.
 # Every line below has a simple comment explaining what it does.
 
+import random  # Generate a brand-new 6-digit confirmation code for email verification.
+
 import httpx  # A toolkit that lets this app talk to Supabase's "update my profile" service.
+import resend  # The mail service used to send the OTP email to the user.
 from fastapi import (  # Tools from the FastAPI web framework.
     APIRouter,  # Lets us group web addresses together under one name (like /auth).
     Depends,  # Lets a web address ask another helper to run first (like "who is logged in?").
@@ -19,14 +22,16 @@ from supabase import (  # Special error messages that Supabase sends back to us.
 from app.config import settings  # Reads the website address and secret key of Supabase from the settings file.
 from app.database import supabase  # Gets the shared connection to Supabase so we can talk to it.
 from app.dependencies import get_current_user  # Gets the helper that checks who is logged in using their token.
-from app.schemas.auth import (  # Gets the data shapes used for login, signup, and user details (defined in the schemas file).
+from app.schemas.auth import (  # Gets the data shapes used for login, signup, OTP, and user details.
     PasswordResetRequest,  # The shape of a request that says "I forgot my password".
+    SignUpRequest,  # The shape of an OTP request that includes an email address and password.
     SignupResponse,  # The shape of the answer we send back after a signup.
     TokenResponse,  # The shape of the answer we send back after a login (contains the login key).
     UserLogin,  # The shape of a login request (email + password).
     UserProfileUpdate,  # The shape of a request that changes profile details (like name).
     UserResponse,  # The shape of a user object we send back to the app.
     UserSignUp,  # The shape of a signup request (email + password + name + role).
+    VerifyOtpRequest,  # The shape of a request that checks whether the OTP code is valid.
 )
 
 # Create a group of web addresses that all begin with /auth.
@@ -246,3 +251,60 @@ def _user_to_response(user) -> UserResponse:
         full_name=metadata.get("full_name"),  # The full name from the pocket.
         created_at=str(user.created_at) if user.created_at else None,  # When the account was made (as simple text).
     )
+
+@router.post("/send-otp")  # Add a route that sends a verification code to an email address.
+def send_otp(payload: SignUpRequest):  # Generate a new 6-digit code and email it to the user.
+    if not settings.RESEND_API_KEY:  # If the email service key is empty, do not try to send mail.
+        raise HTTPException(  # Stop and explain that email sending is not configured.
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the missing key is a server setup problem.
+            detail="RESEND_API_KEY is not configured.",  # Tell the caller exactly which setting is missing.
+        )
+
+    otp = f"{random.randint(100000, 999999):06d}"  # Build a six-digit verification code that is hard for someone else to guess.
+    resend.api_key = settings.RESEND_API_KEY  # Tell Resend which key to use for this email.
+
+    try:  # Try to save the OTP and email it.
+        supabase.table("otp_codes").insert({  # Save the email and one-time code in the OTP table.
+            "email": payload.email,  # Keep the email address that needs the code.
+            "otp_code": otp,  # Save the code that will later be checked.
+        }).execute()  # Run the insert now so the code is stored.
+        resend.Emails.send({  # Send the actual email using the Resend API.
+            "from": "onboarding@resend.dev",  # Use the default Resend sender.
+            "to": payload.email,  # Send the message to the address the user typed.
+            "subject": "Your Verification Code",  # Give the message a clear title.
+            "html": f"<p>Your verification code is: <strong>{otp}</strong></p>",  # Put the code in HTML so it is easier to read in mail apps.
+        })  # Deliver the message.
+        return {"message": "OTP sent successfully."}  # Tell the front end that the message was sent.
+    except Exception as error:  # If the database or email service fails, return a server error.
+        raise HTTPException(  # Stop and tell the app the OTP message could not be sent.
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the mail step failed.
+            detail="Failed to send OTP. Please try again.",  # Give the caller a friendly message without exposing internal details.
+        ) from error  # Keep the original error in the server logs for debugging.
+
+
+@router.post("/verify-otp")  # Add a route that checks whether the code typed by the user is the correct one.
+def verify_otp(payload: VerifyOtpRequest):  # Check the stored OTP for the user's email and compare it to the code they sent.
+    try:  # Try to fetch the latest OTP saved for this email.
+        result = supabase.table("otp_codes").select("*").eq("email", payload.email).order("created_at", desc=True).limit(1).execute()  # Pick the newest stored code for this email so the user is checked against the newest message.
+    except Exception as error:  # If the database query fails, show a server error.
+        raise HTTPException(  # Stop and tell the app the OTP check failed.
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the database check failed.
+            detail="Could not verify OTP.",  # Say the OTP check failed without exposing the database issue.
+        ) from error  # Keep the database error in the logs.
+
+    if not result.data:  # If the email has no OTP saved, the code is not valid.
+        raise HTTPException(  # Stop and say the code is invalid.
+            status_code=status.HTTP_400_BAD_REQUEST,  # Use a bad-request error because the input is not recognized.
+            detail="No OTP found for this email.",  # Explain that no code exists for that email.
+        )
+
+    stored_otp = str(result.data[0].get("otp_code", "")).strip()  # Read the saved code from the database.
+    if stored_otp != payload.otp_code.strip():  # If the code typed by the user does not match the saved one, it is wrong.
+        raise HTTPException(  # Stop and tell the app the code is wrong.
+            status_code=status.HTTP_400_BAD_REQUEST,  # Use a bad-request error because the OTP is wrong.
+            detail="Invalid OTP code.",  # Tell the user the code does not match.
+        )
+
+    supabase.table("otp_codes").delete().eq("email", payload.email).execute()  # Remove the used OTP so the same code cannot be reused later.
+    return {"message": "OTP verified successfully."}  # Tell the app the email is now confirmed for this step.
+

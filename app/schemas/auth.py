@@ -11,6 +11,18 @@ from pydantic import (  # A tool that checks and shapes data automatically.
     model_validator,  # A tool that lets us write a check across the whole box at once.
 )
 
+#OTP request and verification schemas
+# app/schemas/auth.py
+from pydantic import BaseModel, EmailStr
+
+class SignUpRequest(BaseModel):
+    email: EmailStr
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    password: str
+    otp_code: str
+
 
 # The box for creating a new account (signup).
 class UserSignUp(BaseModel):
@@ -79,3 +91,15 @@ class UserProfileUpdate(BaseModel):
 # The box for a "I forgot my password" request.
 class PasswordResetRequest(BaseModel):
     email: EmailStr  # The email address the reset link should be sent to.
+
+
+# The box for a request that sends a one-time code to an email address.
+class SignUpRequest(BaseModel):
+    email: EmailStr  # The email address that should receive the one-time code.
+    password: str = Field(min_length=8)  # The password for the account being created or checked.
+
+
+# The box for checking whether the one-time code sent by email is correct.
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr  # The email address that received the one-time code.
+    otp_code: str = Field(min_length=6, max_length=6)  # The 6-digit code the user typed in to prove they own the email.
