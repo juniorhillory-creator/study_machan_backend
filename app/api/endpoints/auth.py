@@ -1,12 +1,37 @@
 # app/api/endpoints/auth.py
 from datetime import datetime, timezone
+from email.message import EmailMessage
+import os
 import random
+import smtplib
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.auth import SignUpRequest, VerifyOtpRequest
 from app.database import supabase
-from app.services.email import send_otp_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+def send_otp_email(recipient: str, otp: str) -> None:
+    """Send an OTP using the SMTP settings configured in the environment."""
+    host = os.getenv("SMTP_HOST")
+    sender = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER")
+    username = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD")
+
+    if not host or not sender:
+        raise RuntimeError("SMTP_HOST and SMTP_FROM (or SMTP_USER) must be configured")
+
+    message = EmailMessage()
+    message["Subject"] = "Your StudyMachan verification code"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(f"Your verification code is: {otp}")
+
+    with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "587")), timeout=30) as server:
+        server.starttls()
+        if username and password:
+            server.login(username, password)
+        server.send_message(message)
 
 
 # --- STEP 3: SEND OTP ---
