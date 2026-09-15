@@ -1,4 +1,7 @@
 .env
 venv/
+.venv/
 __pycache__/
 *.py[cod]
+# Ignore the local environment variable template requested by the project owner.
+.env.example
