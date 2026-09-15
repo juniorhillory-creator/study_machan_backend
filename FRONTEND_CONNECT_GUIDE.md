@@ -4,6 +4,21 @@ Imagine the **Frontend** (the phone app) is a person writing a letter, and the *
 
 This guide explains how to connect your StudyMachan phone app to your backend in **5 simple steps**!
 
+## Vercel and Supabase setup
+
+The backend can run on Vercel, while Supabase remains the refrigerator that stores the data.
+
+1. In Vercel, import this backend repository and use the repository root as the project root.
+2. In Vercel project settings, add these Environment Variables for **Production**, **Preview**, and **Development**:
+   - `SUPABASE_URL` — the Supabase project URL.
+   - `SUPABASE_KEY` — the server-side Supabase key. Never put this in the phone app.
+   - `FRONTEND_URL` — the frontend website origin, when browser access is needed.
+3. Deploy the project. Vercel uses `api/index.py` and sends all requests to the FastAPI app.
+4. Check `https://YOUR-VERCEL-DOMAIN.vercel.app/`; it should return `"status": "success"`.
+5. Set `BACKEND_URL` in the frontend to `https://YOUR-VERCEL-DOMAIN.vercel.app`.
+
+Do not copy `.env` into Git or put `SUPABASE_KEY` in any `NEXT_PUBLIC_`, `EXPO_PUBLIC_`, or mobile-app setting.
+
 ---
 
 ## Step 1: Make sure the big refrigerator (Supabase) has the right boxes! 📦

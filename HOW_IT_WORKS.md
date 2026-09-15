@@ -7,6 +7,48 @@ Our kitchen reads the note, cooks the answer, and sends food (data) back.
 
 This folder is the kitchen. Read below to learn what each "cook" does.
 
+## The Vercel Door — `api/index.py`
+
+This tiny file is the door Vercel uses to find the FastAPI kitchen.
+
+- It imports the app from `main.py`.
+- Vercel runs it as an online Python function.
+- The app still uses Supabase through the `SUPABASE_URL` and `SUPABASE_KEY` settings.
+
+**Remember:** Vercel hosts the kitchen; Supabase stores the food.
+
+## The Secret Recipe Card — `.env.example`
+
+This file lists the names of settings needed on a computer or in Vercel.
+
+- `SUPABASE_URL` is the Supabase project address.
+- `SUPABASE_KEY` is the private server key and must stay secret.
+- `FRONTEND_URL` is the website address allowed to call the backend.
+
+**Remember:** Put real values in Vercel Environment Variables, not in this file.
+
+## The Supabase MCP Note — `.vscode/mcp.json`
+
+This small note tells VS Code how to talk to the Supabase refrigerator through its helper service.
+
+- It names the helper `supabase`.
+- It uses Supabase's official online helper address.
+- It limits the helper to this project's reference and the selected Supabase tools.
+- VS Code may ask you to sign in the first time it uses the helper.
+
+**Remember:** This file stores the connection address, not a secret key.
+
+## The Supabase Helper Notes — `.agents/skills/` and `skills-lock.json`
+
+These notes teach coding helpers how to work carefully with Supabase.
+
+- `.agents/skills/supabase/` gives general Supabase guidance.
+- `.agents/skills/supabase-postgres-best-practices/` gives safe database guidance.
+- `skills-lock.json` records where these notes came from.
+- `.claude/skills/` contains the same notes for another coding helper.
+
+**Remember:** These notes help the coding helper; they do not hold Supabase passwords.
+
 ---
 
 ## The Chef's Table — `main.py`
