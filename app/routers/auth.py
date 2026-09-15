@@ -84,8 +84,11 @@ def signup(payload: UserSignUp):
                 "address": payload.address or "Not provided",  # Put address into address column.
             }  # Finished preparing student data box.
             supabase.table("students").upsert(student_row).execute()  # Save data into the students table in Supabase.
-        except Exception:  # If saving to the table fails...
-            pass  # ...keep going so user creation still succeeds.
+        except Exception as error:  # If saving to the table fails, keep the failure visible.
+            raise HTTPException(  # Tell the frontend that the profile was not saved.
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use error number 500 for a server-side database problem.
+                detail="Account was created, but the student profile could not be saved.",  # Give the frontend a safe, useful message.
+            ) from error  # Preserve the original database error for server logs and debugging.
 
     needs_confirmation = response.session is None  # If Supabase did NOT give a login key, the user must still click a link in their email.
 

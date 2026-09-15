@@ -6,6 +6,7 @@
 from fastapi import FastAPI  # The tool that builds the whole web app.
 from fastapi.middleware.cors import CORSMiddleware  # The tool that lets the frontend app talk to us.
 
+from app.config import settings  # Reads the optional frontend address used for browser requests.
 from app.database import supabase  # Gets the shared connection to Supabase (imported to verify it loads correctly).
 
 # Build the web app and give it a name and a description.
@@ -15,11 +16,13 @@ app = FastAPI(
     version="1.0.0"  # The version number of this app.
 )
 
-# Turn on CORS. This means the phone/mobile app (or website) on another web address is allowed to talk to us.
+# Turn on CORS. This means the phone/mobile app or website can talk to this backend.
+allowed_origins = [settings.FRONTEND_URL] if settings.FRONTEND_URL else ["*"]  # Use the deployed frontend or allow local mobile testing.
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow any web address to talk to us (lock this down to the real app domain in production).
-    allow_credentials=True,  # Allow the app to send cookies or login keys with its requests.
+    allow_origins=allowed_origins,  # Allow the configured frontend or all origins when no browser origin is configured.
+    allow_credentials=bool(settings.FRONTEND_URL),  # Allow browser credentials only when one specific origin is configured.
     allow_methods=["*"],  # Allow all request types (GET, POST, PUT, DELETE, ...).
     allow_headers=["*"],  # Allow all extra information headers.
 )
