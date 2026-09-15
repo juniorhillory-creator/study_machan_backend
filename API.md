@@ -129,6 +129,32 @@ The kitchen answers politely: **"If this email is registered, a password reset l
 
 ---
 
+## Send a one-time email code
+
+**Method:** `POST`
+**Address:** `/auth/send-otp`
+**Process name:** _Send verification code_
+
+The phone sends an email address. The kitchen makes a 6-digit code and sends it through the Resend email service.
+
+The kitchen answers: **"OTP sent successfully."** if the message was delivered.
+If the email service key is missing, the kitchen returns a server error and tells the operator to add `RESEND_API_KEY`.
+
+---
+
+## Check the one-time email code
+
+**Method:** `POST`
+**Address:** `/auth/verify-otp`
+**Process name:** _Verify email code_
+
+The phone sends the email address and the 6-digit code. The kitchen looks up the newest saved code for that email.
+
+If the code matches, the kitchen says: **"OTP verified successfully."**
+If the code is missing or wrong, the kitchen says: **"No OTP found for this email."** or **"Invalid OTP code."**
+
+---
+
 ## Save a study material (study notes)
 
 **Method:** `POST`

@@ -84,8 +84,9 @@ This file is the **key to the big refrigerator** (Supabase).
 This file is the **secret book**.
 
 - It reads the same secret address and key from the `.env` file.
+- It also reads `RESEND_API_KEY` for OTP and reset emails.
 - It puts them into a box called `settings`.
-- Other files ask `settings` when they need the address or the key.
+- Other files ask `settings` when they need the address, the key, or the email service key.
 
 **Remember:** Same secrets as `database.py`; it just stores them in a neat box.
 
@@ -138,6 +139,15 @@ The web addresses here all start with `/auth`.
 
 - **`POST /auth/reset-password`** — **I forgot my password!**
   - Sends a "make a new password" link to the user's email.
+
+- **`POST /auth/send-otp`** — **Send a one-time email code.**
+  - Creates a 6-digit code and sends it through Resend to the email address.
+  - Stores the code in the `otp_codes` table so it can be checked later.
+
+- **`POST /auth/verify-otp`** — **Check the one-time email code.**
+  - Reads the newest stored code for that email and checks if it matches what the user typed.
+  - If it matches, says **"OTP verified successfully."**
+  - If it does not match, says **"Invalid OTP code."**
 
 **Remember:** This is the most important door in the app — everyone comes through here.
 
