@@ -4,9 +4,11 @@ from email.message import EmailMessage
 import os
 import random
 import smtplib
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status  # Import the web route tools and status codes.
+from fastapi.responses import RedirectResponse  # Send the browser to the sign-in page after account creation.
 from app.schemas.auth import SignUpRequest, VerifyOtpRequest
 from app.database import supabase
+from app.config import settings  # Read the configured frontend address for the redirect.
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -105,7 +107,5 @@ def verify_otp(request: VerifyOtpRequest):
     # 5. Delete used OTP code so it cannot be reused
     supabase.table("otp_codes").delete().eq("email", request.email).execute()
 
-    return {
-        "message": "Email verified and account created successfully!",
-        "user_id": user_response.user.id if hasattr(user_response, "user") else None
-    }
+    login_url = f"{settings.FRONTEND_URL.rstrip('/')}/login" if settings.FRONTEND_URL else "/login"  # Build the frontend sign-in address safely.
+    return RedirectResponse(url=login_url, status_code=status.HTTP_303_SEE_OTHER)  # Send the newly registered person back to sign in.

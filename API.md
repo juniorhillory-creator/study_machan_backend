@@ -150,7 +150,7 @@ If the email service key is missing, the kitchen returns a server error and tell
 
 The phone sends the email address and the 6-digit code. The kitchen looks up the newest saved code for that email.
 
-If the code matches, the kitchen says: **"OTP verified successfully."**
+If the code matches, the kitchen creates the account and sends the browser to the frontend **`/login`** page with a `303` redirect.
 If the code is missing or wrong, the kitchen says: **"No OTP found for this email."** or **"Invalid OTP code."**
 
 ---

@@ -146,7 +146,7 @@ The web addresses here all start with `/auth`.
 
 - **`POST /auth/verify-otp`** — **Check the one-time email code.**
   - Reads the newest stored code for that email and checks if it matches what the user typed.
-  - If it matches, says **"OTP verified successfully."**
+  - If it matches, creates the account and sends the browser back to the frontend sign-in page.
   - If it does not match, says **"Invalid OTP code."**
 
 **Remember:** This is the most important door in the app — everyone comes through here.
