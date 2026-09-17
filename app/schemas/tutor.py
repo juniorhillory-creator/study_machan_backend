@@ -1,55 +1,30 @@
 # app/schemas/tutor.py
 # This file is a list of "boxes" that hold data for tutor operations.
 # Each box tells the app exactly what information is allowed to go in and out.
-# The shapes here match exactly what the frontend (StudyMachan app) sends and expects.
+# The shared personal fields (name, username, email, birthday, gender, address) and their checks
+# live in app/schemas/profile.py so students, tutors, and signup all follow the same rules.
 # Every line below has a simple comment explaining what it does.
 
-import re  # A tool that helps us check if text matches a pattern (like a valid URL).
+import re  # A tool that helps us check if text matches a pattern (like a valid date).
 from datetime import date  # A tool that represents a calendar date.
 from typing import List, Optional  # Words that mean "a list of things" and "can be empty".
 
 from pydantic import (  # A tool that checks and shapes data automatically.
     BaseModel,  # The parent class that turns a "box" into a real, usable Python object.
-    EmailStr,  # A special text type that must look like an email address.
     Field,  # A tool that adds extra rules to a box.
     field_validator,  # A tool that lets us write our own custom check for a single field.
     model_validator,  # A tool that lets us write a check across the whole box at once.
 )
 
+from app.schemas.profile import ProfileFieldsBase, age_in_years  # The shared personal fields, their checks, and the age helper.
+
 
 # The box for creating a new tutor profile (what the frontend sends us after sign-up).
-class TutorProfileCreate(BaseModel):
+class TutorProfileCreate(ProfileFieldsBase):
     id: str = Field(  # The tutor's unique ID — comes from Supabase auth (same user).
         ...,  # The three dots mean this field is required (cannot be empty).
         min_length=1,  # The ID must have at least 1 character.
         description="Supabase auth user UUID",  # A short explanation of what this field is.
-    )
-    full_name: str = Field(  # The tutor's full name.
-        ...,  # Required.
-        min_length=2,  # The name must have at least 2 letters.
-        max_length=100,  # The name cannot be longer than 100 letters.
-        description="Tutor's full name",  # A short explanation.
-    )
-    username: str = Field(  # The tutor's chosen display name.
-        ...,  # Required.
-        min_length=3,  # Username must have at least 3 characters.
-        max_length=30,  # Username cannot be longer than 30 characters.
-        description="Unique username chosen by the tutor",  # A short explanation.
-    )
-    email: EmailStr  # The tutor's email — must look like a real email (abc@xyz.com).
-    date_of_birth: str = Field(  # The tutor's birthday written as text (YYYY-MM-DD).
-        ...,  # Required.
-        description="Date of birth in YYYY-MM-DD format",  # A short explanation.
-    )
-    gender: str = Field(  # The tutor's gender (Male, Female, or Other).
-        ...,  # Required.
-        description="Gender: Male, Female, or Other",  # A short explanation.
-    )
-    address: str = Field(  # The tutor's home address.
-        ...,  # Required.
-        min_length=5,  # Address must have at least 5 characters.
-        max_length=250,  # Address cannot be longer than 250 characters.
-        description="Tutor's home address",  # A short explanation.
     )
     bio: Optional[str] = Field(  # A short "about me" paragraph from the tutor.
         default=None,  # This can be empty.
@@ -96,29 +71,7 @@ class TutorProfileCreate(BaseModel):
         description="URL to the tutor's profile photo",  # A short explanation.
     )
 
-    # Custom check: make sure the full_name only has safe characters.
-    @field_validator("full_name")
-    @classmethod
-    def validate_full_name(cls, v: str) -> str:
-        v = v.strip()  # Remove any extra spaces.
-        if not re.match(r"^[A-Za-z\s.\-']+$", v):  # Check the name has only safe characters.
-            raise ValueError(  # If bad characters found, stop and tell the app.
-                "Full name must contain only letters, spaces, dots, hyphens, or apostrophes."
-            )
-        return v  # Return the cleaned name.
-
-    # Custom check: make sure the username is safe (letters, numbers, underscores, hyphens only).
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        v = v.strip()  # Remove any extra spaces.
-        if not re.match(r"^[A-Za-z0-9_\-]+$", v):  # Check if username has only safe characters.
-            raise ValueError(  # If bad characters found, stop and tell the app.
-                "Username must contain only letters, numbers, underscores, or hyphens."
-            )
-        return v  # Return the cleaned username.
-
-    # Custom check: make sure the date of birth is a real calendar date in YYYY-MM-DD format.
+    # Custom check (replaces the shared one): a tutor must be a real past date AND at least 18 years old.
     @field_validator("date_of_birth")
     @classmethod
     def validate_dob(cls, v: str) -> str:
@@ -130,19 +83,9 @@ class TutorProfileCreate(BaseModel):
             raise ValueError("date_of_birth is not a valid calendar date.")  # Tell the app.
         if parsed >= date.today():  # The birthday must be in the past.
             raise ValueError("date_of_birth must be in the past.")  # Tell the app.
-        age = (date.today() - parsed).days // 365  # Work out how old the tutor is.
-        if age < 18 or age > 100:  # A tutor must be at least 18 years old.
+        if not 18 <= age_in_years(parsed) <= 100:  # A tutor must be at least 18 years old.
             raise ValueError("Tutor must be at least 18 years old.")  # Tell the app.
         return v  # Return the valid date string.
-
-    # Custom check: make sure gender is one of the three allowed words.
-    @field_validator("gender")
-    @classmethod
-    def validate_gender(cls, v: str) -> str:
-        allowed = {"Male", "Female", "Other"}  # The only accepted values.
-        if v not in allowed:  # If the value is something else...
-            raise ValueError(f"gender must be one of: {', '.join(allowed)}")  # Tell the app.
-        return v  # Return the valid gender.
 
     # Custom check: make sure teaching_mode is one of the allowed words (if provided).
     @field_validator("teaching_mode")

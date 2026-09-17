@@ -1,7 +1,8 @@
 # app/schemas/student.py
 # This file is a list of "boxes" that hold data for student operations.
 # Each box tells the app exactly what information is allowed to go in and out.
-# The shapes here match exactly what the frontend (StudyMachan app) sends and expects.
+# The shared personal fields (name, username, email, birthday, gender, address) and their checks
+# live in app/schemas/profile.py so students, tutors, and signup all follow the same rules.
 # Every line below has a simple comment explaining what it does.
 
 import re  # A tool that helps us check if text matches a pattern (like a valid date).
@@ -10,16 +11,17 @@ from typing import Any, List, Optional  # Words that mean "any type", "a list of
 
 from pydantic import (  # A tool that checks and shapes data automatically.
     BaseModel,  # The parent class that turns a "box" into a real, usable Python object.
-    EmailStr,  # A special text type that must look like an email address.
     Field,  # A tool that adds extra rules to a box (like "must be at least 2 characters").
     field_validator,  # A tool that lets us write our own custom check for a single field.
     model_validator,  # A tool that lets us write a check across the whole box at once.
 )
 
+from app.schemas.profile import ProfileFieldsBase  # The shared personal fields and their safety checks.
+
 
 # The box for creating a new student profile (what the frontend sends us after sign-up).
-class StudentProfileCreate(BaseModel):
-    # Pre-validator to accept both snake_case and camelCase field names from frontend signup form.
+class StudentProfileCreate(ProfileFieldsBase):
+    # Pre-validator to accept both snake_case and camelCase field names from the frontend (replaces the shared one to add "subjects").
     @model_validator(mode="before")
     @classmethod
     def normalize_frontend_fields(cls, data: Any) -> Any:
@@ -32,40 +34,12 @@ class StudentProfileCreate(BaseModel):
                 data["date_of_birth"] = data["dateOfBirth"]
             if "subjects" in data and "subjects_of_interest" not in data:  # Map subjects from frontend to subjects_of_interest column.
                 data["subjects_of_interest"] = data["subjects"]
-        return data  #Return the normalized dictionary.
+        return data  # Return the normalized dictionary.
 
     id: str = Field(  # The student's unique ID — comes from Supabase auth (same user).
-
         ...,  # The three dots mean this field is required (cannot be empty).
         min_length=1,  # The ID must have at least 1 character.
         description="Supabase auth user UUID",  # A short explanation of what this field is.
-    )
-    full_name: str = Field(  # The student's full name.
-        ...,  # Required.
-        min_length=2,  # The name must have at least 2 letters.
-        max_length=100,  # The name cannot be longer than 100 letters.
-        description="Student's full name",  # A short explanation.
-    )
-    username: str = Field(  # The student's chosen display name (like a nickname).
-        ...,  # Required.
-        min_length=3,  # Username must have at least 3 characters.
-        max_length=30,  # Username cannot be longer than 30 characters.
-        description="Unique username chosen by the student",  # A short explanation.
-    )
-    email: EmailStr  # The student's email — must look like a real email (abc@xyz.com).
-    date_of_birth: str = Field(  # The student's birthday written as text (YYYY-MM-DD).
-        ...,  # Required.
-        description="Date of birth in YYYY-MM-DD format",  # A short explanation.
-    )
-    gender: str = Field(  # The student's gender (Male, Female, or Other).
-        ...,  # Required.
-        description="Gender: Male, Female, or Other",  # A short explanation.
-    )
-    address: str = Field(  # The student's home address.
-        ...,  # Required.
-        min_length=5,  # Address must have at least 5 characters.
-        max_length=250,  # Address cannot be longer than 250 characters.
-        description="Student's home address",  # A short explanation.
     )
     subjects_of_interest: Optional[List[str]] = Field(  # A list of subjects the student wants to study.
         default=[],  # If not sent, we treat it as an empty list.
@@ -86,54 +60,6 @@ class StudentProfileCreate(BaseModel):
         max_length=500,  # The link cannot be longer than 500 characters.
         description="URL to the student's profile photo",  # A short explanation.
     )
-
-    # Custom check: make sure the full_name only has safe characters (letters, spaces, dots, hyphens).
-    @field_validator("full_name")
-    @classmethod
-    def validate_full_name(cls, v: str) -> str:
-        v = v.strip()  # Remove any extra spaces from the beginning and end.
-        if not re.match(r"^[A-Za-z\s.\-']+$", v):  # Check if the name has only safe characters.
-            raise ValueError(  # If bad characters are found, stop and tell the app.
-                "Full name must contain only letters, spaces, dots, hyphens, or apostrophes."
-            )
-        return v  # Return the cleaned name.
-
-    # Custom check: make sure the username is safe (letters, numbers, underscores, hyphens only).
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        v = v.strip()  # Remove any extra spaces.
-        if not re.match(r"^[A-Za-z0-9_\-]+$", v):  # Check if username has only safe characters.
-            raise ValueError(  # If bad characters found, stop and tell the app.
-                "Username must contain only letters, numbers, underscores, or hyphens."
-            )
-        return v  # Return the cleaned username.
-
-    # Custom check: make sure the date of birth is a real calendar date in YYYY-MM-DD format.
-    @field_validator("date_of_birth")
-    @classmethod
-    def validate_dob(cls, v: str) -> str:
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):  # Check the format looks like a date.
-            raise ValueError("date_of_birth must be in YYYY-MM-DD format.")  # Tell the app the format is wrong.
-        try:
-            parsed = date.fromisoformat(v)  # Try to turn the text into a real date.
-        except ValueError:  # If the date does not exist (like Feb 30), stop.
-            raise ValueError("date_of_birth is not a valid calendar date.")  # Tell the app.
-        if parsed >= date.today():  # The birthday must be in the past — you cannot be born in the future.
-            raise ValueError("date_of_birth must be in the past.")  # Tell the app.
-        age = (date.today() - parsed).days // 365  # Work out how old the student is (in years).
-        if age < 5 or age > 100:  # A student must be between 5 and 100 years old.
-            raise ValueError("Student age must be between 5 and 100 years.")  # Tell the app.
-        return v  # Return the valid date string.
-
-    # Custom check: make sure gender is one of the three allowed words.
-    @field_validator("gender")
-    @classmethod
-    def validate_gender(cls, v: str) -> str:
-        allowed = {"Male", "Female", "Other"}  # The only accepted values.
-        if v not in allowed:  # If the value is something else...
-            raise ValueError(f"gender must be one of: {', '.join(allowed)}")  # Tell the app.
-        return v  # Return the valid gender.
 
     # Custom check: make sure avatar_url looks like a real web link (if it was provided).
     @field_validator("avatar_url")

@@ -1,74 +1,47 @@
 # app/routers/auth.py
-# This file is the "front door" of the app for users.
-# It handles signing up, logging in, logging out, and showing user details.
+# This file is the "front door" of the app: it makes new accounts.
+# Signup is the ONLY account step the kitchen handles. Login, logout, email codes, and password resets
+# are done by the phone app directly with Supabase, so they do not live here.
 # Every line below has a simple comment explaining what it does.
 
-import random  # Generate a brand-new 6-digit confirmation code for email verification.
+from fastapi import APIRouter, HTTPException, status  # Tools from the FastAPI web framework: route group, error, and status numbers.
+from postgrest.exceptions import APIError  # The error Supabase raises when a table write fails (it carries the Postgres error code).
+from supabase import AuthApiError, AuthWeakPasswordError  # The errors Supabase Auth raises when signup fails.
 
-import httpx  # A toolkit that lets this app talk to Supabase's "update my profile" service.
-import resend  # The mail service used to send the OTP email to the user.
-from fastapi import (  # Tools from the FastAPI web framework.
-    APIRouter,  # Lets us group web addresses together under one name (like /auth).
-    Depends,  # Lets a web address ask another helper to run first (like "who is logged in?").
-    Header,  # Lets us read the secret token that the app sends in the web request.
-    HTTPException,  # Lets us stop and send back an error message to the app.
-    status,  # A list of ready-made error numbers (like 401 = "not allowed").
-)
-from supabase import (  # Special error messages that Supabase sends back to us.
-    AuthApiError,  # A general "something went wrong with the login/ signup" error.
-    AuthInvalidCredentialsError,  # An error meaning "wrong email or password".
-    AuthWeakPasswordError,  # An error meaning "the password is too easy to guess".
-)
-from app.config import settings  # Reads the website address and secret key of Supabase from the settings file.
-from app.database import supabase  # Gets the shared connection to Supabase so we can talk to it.
-from app.dependencies import get_current_user  # Gets the helper that checks who is logged in using their token.
-from app.schemas.auth import (  # Gets the data shapes used for login, signup, OTP, and user details.
-    PasswordResetRequest,  # The shape of a request that says "I forgot my password".
-    SignUpRequest,  # The shape of an OTP request that includes an email address and password.
-    SignupResponse,  # The shape of the answer we send back after a signup.
-    TokenResponse,  # The shape of the answer we send back after a login (contains the login key).
-    UserLogin,  # The shape of a login request (email + password).
-    UserProfileUpdate,  # The shape of a request that changes profile details (like name).
-    UserResponse,  # The shape of a user object we send back to the app.
-    UserSignUp,  # The shape of a signup request (email + password + name + role).
-    VerifyOtpRequest,  # The shape of a request that checks whether the OTP code is valid.
-)
+from app.database import new_auth_client, supabase  # A throwaway client for sign_up, and the shared client for tables.
+from app.schemas.auth import SignupResponse, UserSignUp  # The signup request box and the answer box.
 
-# Create a group of web addresses that all begin with /auth.
-# The tag just labels them in the automatic API list.
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])  # Group every web address here under /auth.
 
 
-# Register a new user. The "+201" below means "successfully created".
+def _delete_auth_user(user_id: str) -> None:  # Best-effort clean-up: remove an auth account whose profile row failed to save.
+    try:  # Try to delete the account so the person can sign up again with the same email.
+        supabase.auth.admin.delete_user(user_id)  # Ask Supabase (with the server key) to remove the account.
+    except Exception:  # ponytail: needs the service-role key; if it fails the orphan auth user simply gets 409 on retry.
+        pass  # Do not hide the original error behind a clean-up error.
+
+
+# Register a new user AND save their student or tutor profile in one go. "201" means "successfully created".
 @router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 def signup(payload: UserSignUp):
-    # Try to create the user inside Supabase's safe user list.
-    try:
-        response = supabase.auth.sign_up({  # Ask Supabase to make the new account.
+    try:  # Try to create the user inside Supabase's safe user list.
+        response = new_auth_client().auth.sign_up({  # Use a fresh client so the shared one never adopts this user's session.
             "email": payload.email,  # Give Supabase the user's email.
             "password": payload.password,  # Give Supabase the user's password (it stores it hidden and safely).
-            "options": {  # Extra information we want Supabase to remember about this user.
-                "data": {  # The "extra pocket" where we put the user's role and name.
-                    "role": payload.role,  # Say if the user is a "student" or a "tutor".
-                    "full_name": payload.full_name,  # Store the user's full name.
-                }
-            },
+            "options": {"data": {"role": payload.role, "full_name": payload.full_name}},  # Remember the role and name on the auth account too.
         })
     except AuthWeakPasswordError:  # If Supabase says the password is too weak...
         raise HTTPException(  # ...stop and send back a clear error to the app.
             status_code=status.HTTP_400_BAD_REQUEST,  # Use error number 400 (meaning "bad request").
             detail="Password is too weak. Use at least 8 characters with a mix of letters and numbers.",  # Tell the app why it failed.
         )
-    except AuthApiError as e:  # If Supabase sends back any other errors...
+    except AuthApiError as e:  # If Supabase sends back any other error...
         if e.code in ("email_exists", "user_already_exists"):  # If the email is already being used...
             raise HTTPException(  # ...stop and tell the app.
                 status_code=status.HTTP_409_CONFLICT,  # Use error number 409 (meaning "this already exists").
                 detail="An account with this email already exists.",  # Explain the problem to the user.
             )
-        raise HTTPException(  # Otherwise, stop with a general error.
-            status_code=status.HTTP_400_BAD_REQUEST,  # Use error number 400.
-            detail=e.message,  # Pass along whatever message Supabase gave us.
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)  # Otherwise pass along Supabase's message.
 
     user = response.user  # Supabase gives back the new user it just created. Take it out.
     if not user:  # If Supabase did not give us a user back...
@@ -76,27 +49,40 @@ def signup(payload: UserSignUp):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use error number 500 (meaning "computer problem").
             detail="Account creation failed. Please try again.",  # Tell the app to try later.
         )
+    if not user.identities:  # When email confirmation is on, Supabase returns a fake user with no identities for an email that already exists.
+        raise HTTPException(  # So treat "no identities" as "this email is taken".
+            status_code=status.HTTP_409_CONFLICT,  # Use error number 409.
+            detail="An account with this email already exists.",  # Explain the problem to the user.
+        )
 
-    if payload.role == "student":  # If the new user signed up as a student...
-        try:  # Try to save the student details into the students database table.
-            student_row = {  # Prepare the data box to save into the students table.
-                "id": user.id,  # Use the user's new ID number.
-                "full_name": payload.full_name or payload.email.split("@")[0],  # Put full_name into full_name column.
-                "username": payload.username or payload.email.split("@")[0],  # Put username into username column.
-                "email": payload.email,  # Put email into email column.
-                "date_of_birth": payload.date_of_birth or "2000-01-01",  # Put date_of_birth into date_of_birth column.
-                "gender": payload.gender or "Other",  # Put gender into gender column.
-                "address": payload.address or "Not provided",  # Put address into address column.
-            }  # Finished preparing student data box.
-            supabase.table("students").upsert(student_row).execute()  # Save data into the students table in Supabase.
-        except Exception as error:  # If saving to the table fails, keep the failure visible.
-            raise HTTPException(  # Tell the frontend that the profile was not saved.
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use error number 500 for a server-side database problem.
-                detail="Account was created, but the student profile could not be saved.",  # Give the frontend a safe, useful message.
-            ) from error  # Preserve the original database error for server logs and debugging.
+    profile_row = {  # The personal details that go into the students or tutors table.
+        "id": user.id,  # Use the user's new ID number so the row and the auth account match.
+        "full_name": payload.full_name,  # The full name.
+        "username": payload.username,  # The username.
+        "email": payload.email,  # The email.
+        "date_of_birth": payload.date_of_birth,  # The birthday.
+        "gender": payload.gender,  # The gender.
+        "address": payload.address,  # The address.
+    }
+    if payload.role == "tutor":  # Tutors get two extra columns the tutors table expects.
+        profile_row.update({"subjects": [], "teaching_mode": "Online"})  # Start with no subjects and online teaching; the tutor edits these later.
+    table = "tutors" if payload.role == "tutor" else "students"  # Pick the table that matches the chosen role.
 
-    needs_confirmation = response.session is None  # If Supabase did NOT give a login key, the user must still click a link in their email.
+    try:  # Try to save the profile row.
+        supabase.table(table).insert(profile_row).execute()  # Insert (not upsert) so an existing row is never silently overwritten.
+    except APIError as error:  # If the database rejects the row...
+        _delete_auth_user(user.id)  # ...remove the half-made account so the email can be used again.
+        if error.code == "23505":  # Postgres code 23505 means "a unique value already exists" (for example the username).
+            raise HTTPException(  # Tell the app which value clashed.
+                status_code=status.HTTP_409_CONFLICT,  # Use error number 409.
+                detail="That username is already taken. Please choose another one.",  # Clear reason.
+            ) from error  # Keep the original database error for server logs.
+        raise HTTPException(  # For any other database problem...
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # ...use error number 500.
+            detail=f"Account was created, but the {payload.role} profile could not be saved.",  # Give the app a safe, useful message.
+        ) from error  # Keep the original database error for server logs.
 
+    needs_confirmation = response.session is None  # If Supabase did NOT give a login key, the user must still confirm their email.
     return SignupResponse(  # Send a friendly answer back to the app.
         message=(  # The text we show the user.
             "Account created. Please confirm your email address to sign in."  # Text for when an email confirmation is needed.
@@ -105,206 +91,5 @@ def signup(payload: UserSignUp):
         ),
         user_id=user.id,  # Give the app the new user's ID number.
         email=payload.email,  # Give the app the email that was used.
-        needs_email_confirmation=needs_confirmation,  # Tell the app whether it must ask the user to click the email link.
+        needs_email_confirmation=needs_confirmation,  # Tell the app whether it must ask the user to confirm their email.
     )
-
-
-# Log an existing user in and give them a login key (token).
-@router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin):
-    # Try to sign the user in with Supabase.
-    try:
-        response = supabase.auth.sign_in_with_password({  # Ask Supabase to check the email and password.
-            "email": payload.email,  # Give Supabase the email the user typed.
-            "password": payload.password,  # Give Supabase the password the user typed.
-        })
-    except AuthApiError as e:  # If Supabase sends back an error...
-        if e.code == "email_not_confirmed":  # If the user never clicked the email confirmation link...
-            raise HTTPException(  # ...stop and tell them to confirm their email first.
-                status_code=status.HTTP_403_FORBIDDEN,  # Use error number 403 (meaning "not allowed yet").
-                detail="Please confirm your email address before signing in.",  # Explain what the user should do.
-            )
-        if e.code == "invalid_credentials":  # If the email or password is wrong...
-            raise HTTPException(  # ...stop and tell the app.
-                status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401 (meaning "wrong login details").
-                detail="Invalid email or password.",  # Say the details are wrong without giving away which one.
-            )
-        raise HTTPException(  # For any other Supabase error...
-            status_code=status.HTTP_401_UNAUTHORIZED,  # ...use the "not allowed" error number.
-            detail=e.message,  # Pass along whatever message Supabase gave us.
-        )
-    except AuthInvalidCredentialsError:  # If Supabase used the other kind of "wrong details" error...
-        raise HTTPException(  # ...stop and tell the app the same friendly message.
-            status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401.
-            detail="Invalid email or password.",  # Say the details are wrong.
-        )
-
-    session = response.session  # Take the login key (token) out of Supabase's answer.
-    if not session:  # If there is no login key, the email has not been confirmed yet.
-        raise HTTPException(  # So stop and ask the user to confirm their email.
-            status_code=status.HTTP_403_FORBIDDEN,  # Use error number 403.
-            detail="Please confirm your email address before signing in.",  # Tell the user what to do.
-        )
-
-    return TokenResponse(  # Send the login key back to the app.
-        access_token=session.access_token,  # The secret key the app will use for future requests.
-        user_id=response.user.id,  # The user's ID number.
-        email=response.user.email or payload.email,  # The user's email (falling back to the one they typed).
-        expires_in=session.expires_in,  # How many seconds until the key runs out.
-    )
-
-
-# Log the user out. The app simply throws away the login key.
-@router.post("/logout")
-def logout(authorization: str = Header(default="")):
-    # Ask Supabase to forget any session it may be holding (there usually isn't one server-side).
-    supabase.auth.sign_out()  # Tell Supabase to sign out (this is a safety step).
-    return {"message": "Successfully logged out"}  # Send a friendly "you are logged out" message.
-
-
-# Show the details of the user who is currently logged in ("me").
-@router.get("/users/me", response_model=UserResponse)
-def get_me(user=Depends(get_current_user)):
-    # Before this line runs, FastAPI already checked the login key using get_current_user.
-    # The line below changes the user object into a simple, safe answer for the app.
-    return _user_to_response(user)  # Turn the user into the simple UserResponse shape.
-
-
-# Update the profile (name or role) of the currently logged-in user.
-@router.put("/users/me", response_model=UserResponse)
-def update_me(payload: UserProfileUpdate, authorization: str = Header(...)):
-    token = authorization.removeprefix("Bearer ").strip()  # Pull the login key out of the request (removing the word "Bearer" and extra spaces).
-    if not token:  # If there is no login key at all...
-        raise HTTPException(  # ...stop and say the user is not allowed.
-            status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401.
-            detail="Invalid or missing authorization header",  # Explain that the login key is missing.
-        )
-
-    try:
-        current = supabase.auth.get_user(token)  # Ask Supabase who this login key belongs to.
-        if not current or not current.user:  # If Supabase does not know this key...
-            raise HTTPException(  # ...stop and say the key is bad.
-                status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401.
-                detail="Invalid token",  # Say the key is invalid.
-            )
-        metadata = dict(current.user.user_metadata or {})  # Copy the user's "extra pocket" of saved details (role, name).
-        updates = payload.model_dump(exclude_unset=True)  # Turn the app's changes into a plain list of values.
-        metadata.update(updates)  # Put the new details into the pocket, keeping the old ones too.
-
-        headers = {  # The secret information Supabase needs to allow this change.
-            "Authorization": f"Bearer {token}",  # The login key that proves who the user is.
-            "apikey": settings.SUPABASE_KEY,  # The secret app key from the settings file.
-        }
-        with httpx.Client(timeout=15) as client:  # Open a short phone call with Supabase (max 15 seconds).
-            resp = client.put(  # Send the "update my profile" request.
-                f"{settings.SUPABASE_URL}/auth/v1/user",  # The exact web address of the update-profile service.
-                json={"data": metadata},  # Say "save this new pocket of details".
-                headers=headers,  # Include the keys that prove who is asking.
-            )
-        if resp.status_code != 200:  # If Supabase did not say "OK"...
-            raise HTTPException(  # ...stop and tell the app.
-                status_code=status.HTTP_400_BAD_REQUEST,  # Use error number 400.
-                detail=resp.json().get("msg") or "Failed to update profile",  # Show Supabase's message, or a friendly fallback.
-            )
-        updated_user = resp.json()  # Take the updated user details out of Supabase's answer.
-    except HTTPException:  # If we already raised one of our own clear errors...
-        raise  # ...just send that same error onwards (do not change it).
-    except Exception as e:  # If any other unexpected problem happens...
-        raise HTTPException(  # ...stop and tell the app something went wrong.
-            status_code=status.HTTP_400_BAD_REQUEST,  # Use error number 400.
-            detail=str(e),  # Pass along a short description of the problem.
-        )
-
-    return UserResponse(  # Send the freshly updated profile back to the app.
-        id=updated_user.get("id", current.user.id),  # The user's ID (using the old one if Supabase did not repeat it).
-        email=updated_user.get("email", current.user.email),  # The user's email address.
-        role=metadata.get("role"),  # The saved role (student or tutor).
-        full_name=metadata.get("full_name"),  # The saved full name.
-        created_at=updated_user.get("created_at"),  # When the account was made.
-    )
-
-
-# Send the user a link to reset their forgotten password.
-@router.post("/reset-password")
-def reset_password(payload: PasswordResetRequest):
-    # Ask Supabase to email the user a safe "make a new password" link.
-    try:
-        supabase.auth.reset_password_for_email(  # Tell Supabase to send the reset email.
-            payload.email,  # The email address to send the link to.
-            {"redirect_to": f"{settings.SUPABASE_URL}/auth/v1/confirm"},  # The web address the user should go to after resetting.
-        )
-    except AuthApiError as e:  # If Supabase sends back an error...
-        raise HTTPException(  # ...stop and tell the app.
-            status_code=status.HTTP_400_BAD_REQUEST,  # Use error number 400.
-            detail=e.message,  # Pass along Supabase's message.
-        )
-    return {"message": "If this email is registered, a password reset link has been sent."}  # Answer politely without revealing if the email exists.
-
-
-# Helper function: turn a Supabase user into the simple UserResponse shape the app likes.
-def _user_to_response(user) -> UserResponse:
-    metadata = user.user_metadata or {}  # Open the user's "extra pocket" of saved details.
-    return UserResponse(  # Build the safe answer object.
-        id=user.id,  # The user's ID number.
-        email=user.email,  # The user's email address.
-        role=user.role or metadata.get("role"),  # The role, looking in the pocket if it is not already on the user.
-        full_name=metadata.get("full_name"),  # The full name from the pocket.
-        created_at=str(user.created_at) if user.created_at else None,  # When the account was made (as simple text).
-    )
-
-@router.post("/send-otp")  # Add a route that sends a verification code to an email address.
-def send_otp(payload: SignUpRequest):  # Generate a new 6-digit code and email it to the user.
-    if not settings.RESEND_API_KEY:  # If the email service key is empty, do not try to send mail.
-        raise HTTPException(  # Stop and explain that email sending is not configured.
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the missing key is a server setup problem.
-            detail="RESEND_API_KEY is not configured.",  # Tell the caller exactly which setting is missing.
-        )
-
-    otp = f"{random.randint(100000, 999999):06d}"  # Build a six-digit verification code that is hard for someone else to guess.
-    resend.api_key = settings.RESEND_API_KEY  # Tell Resend which key to use for this email.
-
-    try:  # Try to save the OTP and email it.
-        supabase.table("otp_codes").insert({  # Save the email and one-time code in the OTP table.
-            "email": payload.email,  # Keep the email address that needs the code.
-            "otp_code": otp,  # Save the code that will later be checked.
-        }).execute()  # Run the insert now so the code is stored.
-        resend.Emails.send({  # Send the actual email using the Resend API.
-            "from": "onboarding@resend.dev",  # Use the default Resend sender.
-            "to": payload.email,  # Send the message to the address the user typed.
-            "subject": "Your Verification Code",  # Give the message a clear title.
-            "html": f"<p>Your verification code is: <strong>{otp}</strong></p>",  # Put the code in HTML so it is easier to read in mail apps.
-        })  # Deliver the message.
-        return {"message": "OTP sent successfully."}  # Tell the front end that the message was sent.
-    except Exception as error:  # If the database or email service fails, return a server error.
-        raise HTTPException(  # Stop and tell the app the OTP message could not be sent.
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the mail step failed.
-            detail="Failed to send OTP. Please try again.",  # Give the caller a friendly message without exposing internal details.
-        ) from error  # Keep the original error in the server logs for debugging.
-
-
-@router.post("/verify-otp")  # Add a route that checks whether the code typed by the user is the correct one.
-def verify_otp(payload: VerifyOtpRequest):  # Check the stored OTP for the user's email and compare it to the code they sent.
-    try:  # Try to fetch the latest OTP saved for this email.
-        result = supabase.table("otp_codes").select("*").eq("email", payload.email).order("created_at", desc=True).limit(1).execute()  # Pick the newest stored code for this email so the user is checked against the newest message.
-    except Exception as error:  # If the database query fails, show a server error.
-        raise HTTPException(  # Stop and tell the app the OTP check failed.
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Use a server error because the database check failed.
-            detail="Could not verify OTP.",  # Say the OTP check failed without exposing the database issue.
-        ) from error  # Keep the database error in the logs.
-
-    if not result.data:  # If the email has no OTP saved, the code is not valid.
-        raise HTTPException(  # Stop and say the code is invalid.
-            status_code=status.HTTP_400_BAD_REQUEST,  # Use a bad-request error because the input is not recognized.
-            detail="No OTP found for this email.",  # Explain that no code exists for that email.
-        )
-
-    stored_otp = str(result.data[0].get("otp_code", "")).strip()  # Read the saved code from the database.
-    if stored_otp != payload.otp_code.strip():  # If the code typed by the user does not match the saved one, it is wrong.
-        raise HTTPException(  # Stop and tell the app the code is wrong.
-            status_code=status.HTTP_400_BAD_REQUEST,  # Use a bad-request error because the OTP is wrong.
-            detail="Invalid OTP code.",  # Tell the user the code does not match.
-        )
-
-    supabase.table("otp_codes").delete().eq("email", payload.email).execute()  # Remove the used OTP so the same code cannot be reused later.
-    return {"message": "OTP verified successfully."}  # Tell the app the email is now confirmed for this step.
-

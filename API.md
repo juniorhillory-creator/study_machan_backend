@@ -27,153 +27,52 @@ The kitchen answers: **"Yes, StudyMachan Backend is running!"**
 **Address:** `/auth/signup`
 **Process name:** _Make a new account_
 
-What the phone sends:
+This is the **only** account note the kitchen handles. Logging in, logging out, the 6-digit email code, and
+password resets are done by the phone app straight with Supabase.
 
-| What it sends                    | What it means                                | Database Column                     |
-| -------------------------------- | -------------------------------------------- | ----------------------------------- |
-| `email`                          | The person's email address                   | `email`                             |
-| `password`                       | Secret password (at least 8 letters/numbers) | Hidden in Supabase Auth             |
-| `full_name` or `fullName`        | Person's full name                           | `full_name` in `students` table     |
-| `username`                       | Person's display name                        | `username` in `students` table      |
-| `role`                           | `student` or `tutor`                         | Saved in user metadata              |
-| `date_of_birth` or `dateOfBirth` | Birthday (YYYY-MM-DD)                        | `date_of_birth` in `students` table |
-| `gender`                         | `Male`, `Female`, or `Other`                 | `gender` in `students` table        |
-| `address`                        | Home address                                 | `address` in `students` table       |
+What the phone sends (every field is required):
+
+| What it sends                    | What it means                                | Where it is saved                                   |
+| -------------------------------- | -------------------------------------------- | --------------------------------------------------- |
+| `email`                          | The person's email address                   | Supabase Auth + `email` column                      |
+| `password`                       | Secret password (at least 8 letters/numbers) | Hidden in Supabase Auth                             |
+| `role`                           | `student` or `tutor` (nothing else)          | Picks the table: `students` or `tutors`             |
+| `full_name` or `fullName`        | Person's full name                           | `full_name` column                                  |
+| `username`                       | Display name (3–30 letters/numbers/`_`/`-`)  | `username` column                                   |
+| `date_of_birth` or `dateOfBirth` | Birthday (YYYY-MM-DD)                        | `date_of_birth` column                              |
+| `gender`                         | `Male`, `Female`, or `Other`                 | `gender` column                                     |
+| `address`                        | Home address (5–250 letters)                 | `address` column                                    |
 
 What happens:
 
-- The kitchen creates the user account in Supabase Auth.
-- If `role` is `student`, the kitchen automatically saves `full_name`, `username`, `email`, `date_of_birth`, `gender`, and `address` into the `students` table in Supabase.
-- If a stronger email confirmation is needed, the kitchen says: **"you must click the link in your email first."** (`needs_email_confirmation = true`)
-- If the email is already used: error `409` → **"This email already exists."**
+- The kitchen creates the user account in Supabase Auth (the role and name are also remembered on the account).
+- Then it saves the person's details into the **`students`** table (role `student`) or the **`tutors`** table (role `tutor`).
+  A new tutor starts with no subjects and `teaching_mode = Online`; they can change that later.
+- If Supabase still needs the person to confirm their email, the answer says `needs_email_confirmation = true`.
+- If the email is already used: error `409` → **"An account with this email already exists."**
+- If the username is already used: error `409` → **"That username is already taken."** (the half-made account is removed so the email can be used again)
 - If the password is too easy: error `400` → **"Password is too weak."**
+- If a tutor is under 18, the role is missing, or any field breaks a rule: error `422` with the exact reason.
 
-What the phone gets back: a message, the new account's ID, the email, and whether confirmation is needed.
-
----
-
-## Open the door (Login)
-
-**Method:** `POST`
-**Address:** `/auth/login`
-**Process name:** _Log in_
-
-What the phone sends:
-
-| What it sends | What it means              |
-| ------------- | -------------------------- |
-| `email`       | The person's email address |
-| `password`    | Their password             |
-
-What happens:
-
-- The kitchen checks with Supabase.
-- If the email was never confirmed: error `403` → **"Please confirm your email address before signing in."**
-- If the email or password is wrong: error `401` → **"Invalid email or password."**
-
-What the phone gets back (when success): a login key (`access_token`), the user's ID, their email, and how many seconds the key lasts.
+What the phone gets back: a message, the new account's ID, the email, and whether email confirmation is needed.
 
 ---
 
-## Close the door (Logout)
-
-**Method:** `POST`
-**Address:** `/auth/logout`
-**Process name:** _Log out_
-
-The kitchen forgets the session and says: **"Successfully logged out."**
-
----
-
-## Show me my details
+## Who am I? (student or tutor)
 
 **Method:** `GET`
-**Address:** `/auth/users/me` _(needs login key)_
+**Address:** `/profiles/me` _(needs login key)_
 **Process name:** _Who am I?_
 
-The phone must send the login key in the header. The kitchen looks up the person and sends back:
+The phone sends the login key in the header. The kitchen looks in the `tutors` table first, then the `students` table, and sends back:
 
-- their ID,
-- their email,
-- their role (student/tutor),
-- their full name,
-- and when their account was made.
+- `role` — `tutor` or `student` (which table the person was found in),
+- `id`, `full_name`, `username`, `email`, `date_of_birth`, `gender`, `address`, `avatar_url`.
+
+The app uses this after login to decide which home screen to open and what name to show.
 
 If the key is fake or missing: error `401` → **"not allowed."**
-
----
-
-## Change my details
-
-**Method:** `PUT`
-**Address:** `/auth/users/me` _(needs login key)_
-**Process name:** _Update my profile_
-
-The phone sends new details (you can change the name or the role).
-
-The kitchen saves the change in Supabase and sends back the updated profile.
-If the login key is bad: error `401`.
-
----
-
-## I forgot my password
-
-**Method:** `POST`
-**Address:** `/auth/reset-password`
-**Process name:** _Reset password_
-
-The phone sends an email. The kitchen asks Supabase to mail that address a **"make a new password"** link.
-
-The kitchen answers politely: **"If this email is registered, a password reset link has been sent."**
-(It never says whether the email exists — that keeps people safe.)
-
----
-
-## Send a one-time email code
-
-**Method:** `POST`
-**Address:** `/auth/send-otp`
-**Process name:** _Send verification code_
-
-The phone sends an email address. The kitchen makes a 6-digit code and sends it through the Resend email service.
-
-The kitchen answers: **"OTP sent successfully."** if the message was delivered.
-If the email service key is missing, the kitchen returns a server error and tells the operator to add `RESEND_API_KEY`.
-
----
-
-## Check the one-time email code
-
-**Method:** `POST`
-**Address:** `/auth/verify-otp`
-**Process name:** _Verify email code_
-
-The phone sends the email address and the 6-digit code. The kitchen looks up the newest saved code for that email.
-
-If the code matches, the kitchen creates the account and sends the browser to the frontend **`/login`** page with a `303` redirect.
-If the code is missing or wrong, the kitchen says: **"No OTP found for this email."** or **"Invalid OTP code."**
-
----
-
-## Save a study material (study notes)
-
-**Method:** `POST`
-**Address:** `/study/materials` _(needs login key)_
-**Process name:** _Add study notes_
-
-The phone sends: `title`, `description`, `subject`.
-
-The kitchen saves the note and connects it to the logged-in user's ID.
-
----
-
-## Show my study materials
-
-**Method:** `GET`
-**Address:** `/study/materials` _(needs login key)_
-**Process name:** _View my study notes_
-
-The kitchen shows all study notes that belong to the logged-in user. Nobody sees someone else's notes.
+If no row exists in either table: error `404` → **"Profile not found. Please sign up again."**
 
 ---
 

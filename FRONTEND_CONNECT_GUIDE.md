@@ -19,6 +19,8 @@ The backend can run on Vercel, while Supabase remains the refrigerator that stor
 
 Do not copy `.env` into Git or put `SUPABASE_KEY` in any `NEXT_PUBLIC_`, `EXPO_PUBLIC_`, or mobile-app setting.
 
+The frontend keeps its own settings in `StudyMachan-App/.env` (see `.env.example` there): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `EXPO_PUBLIC_BACKEND_URL`.
+
 ---
 
 ## Step 1: Make sure the big refrigerator (Supabase) has the right boxes! 📦
@@ -98,86 +100,59 @@ export const BACKEND_URL = "http://10.0.2.2:8000";
 
 ## Step 4: Write the code in the Phone App to send information ✉️
 
-Now, when a user signs up as a **Student** or a **Tutor**, call the backend API right after creating their Supabase account!
+When a user fills the sign-up form, send **one** letter to the kitchen. The kitchen creates the Supabase
+account **and** saves the student or tutor row for you. No login key is needed for this letter.
 
-### A. Saving a Student Profile (`POST /students/`)
+### A. Creating an account (`POST /auth/signup`)
 
-In your sign-up screen (`create-account.tsx`):
+In `supabase/authService.ts`:
 
 ```typescript
-import { BACKEND_URL } from "../../constants/api";
+import { BACKEND_URL } from "../constants/api/api";
 
-async function createStudentProfile(
-  userId: string,
-  token: string,
-  formData: any,
-) {
-  const response = await fetch(`${BACKEND_URL}/students/`, {
+export async function registerUser(fields: {
+  email: string;
+  password: string;
+  role: "student" | "tutor";
+  full_name: string;
+  username: string;
+  date_of_birth: string; // YYYY-MM-DD
+  gender: "Male" | "Female" | "Other";
+  address: string;
+}) {
+  const response = await fetch(`${BACKEND_URL}/auth/signup`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`, // Send the secret login key
-    },
-    body: JSON.stringify({
-      id: userId,
-      full_name: formData.fullName,
-      username: formData.username,
-      email: formData.email,
-      date_of_birth: formData.dateOfBirth,
-      gender: formData.gender,
-      address: formData.address,
-      subjects_of_interest: ["Maths", "Science"], // Optional
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
   });
-
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(data.detail || "Failed to create student profile");
+    throw new Error(data?.detail || "Sign up failed");
   }
-  return data;
+  return data as { needs_email_confirmation: boolean };
 }
 ```
 
-### B. Saving a Tutor Profile (`POST /tutors/`)
+After it succeeds, send the person to the **sign-in** page (or to the email-code page first if
+`needs_email_confirmation` is `true`).
+
+### B. Finding out who is logged in (`GET /profiles/me`)
+
+After `supabase.auth.signInWithPassword(...)` succeeds, ask the kitchen who this person is:
 
 ```typescript
-import { BACKEND_URL } from "../../constants/api";
-
-async function createTutorProfile(
-  userId: string,
-  token: string,
-  formData: any,
-) {
-  const response = await fetch(`${BACKEND_URL}/tutors/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`, // Send the secret login key
-    },
-    body: JSON.stringify({
-      id: userId,
-      full_name: formData.fullName,
-      username: formData.username,
-      email: formData.email,
-      date_of_birth: formData.dateOfBirth,
-      gender: formData.gender,
-      address: formData.address,
-      bio: "Hello, I teach Mathematics!",
-      subjects: ["Combined Maths", "Pure Maths"],
-      hourly_rate: 1500,
-      education: "University of Colombo Alumni",
-      district: "Colombo",
-      teaching_mode: "Both",
-    }),
+export async function fetchMyProfile(accessToken: string) {
+  const response = await fetch(`${BACKEND_URL}/profiles/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` }, // Send the secret login key
   });
-
-  const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.detail || "Failed to create tutor profile");
+    throw new Error("Could not load your profile");
   }
-  return data;
+  return response.json(); // { role: "student" | "tutor", full_name, username, email, ... }
 }
 ```
+
+Use `role` to open `/student-home` or `/tutor-home`, and `full_name` to greet the person.
 
 ---
 
@@ -217,7 +192,5 @@ async function fetchTutors(
 
 1. [ ] Supabase database tables (`students` and `tutors`) have all necessary columns.
 2. [ ] Backend app is running using `uvicorn main:app --reload`.
-3. [ ] Frontend passes the login token in `Authorization: Bearer <token>` for protected routes (`POST /students/` and `POST /tutors/`).
-4. [ ] Data sent matches rules (e.g. tutors must be at least 18 years old, dates in `YYYY-MM-DD` format).
-
-"for test commit bikhbjbikhbbkb"
+3. [ ] Frontend passes the login token in `Authorization: Bearer <token>` for protected routes (for example `GET /profiles/me`).
+4. [ ] Data sent matches rules (e.g. tutors must be at least 18 years old, dates in `YYYY-MM-DD` format, `role` is `student` or `tutor`).
