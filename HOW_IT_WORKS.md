@@ -17,15 +17,15 @@ This tiny file is the door Vercel uses to find the FastAPI kitchen.
 
 **Remember:** Vercel hosts the kitchen; Supabase stores the food.
 
-## The Secret Recipe Card — `.env.example`
+## The Secret Recipe Card — `README.md`
 
-This file lists the names of settings needed on a computer or in Vercel.
+The README lists the names of the settings the kitchen needs (no values, only names):
 
 - `SUPABASE_URL` is the Supabase project address.
-- `SUPABASE_KEY` is the private server key and must stay secret.
+- `SUPABASE_KEY` is the private **service role** key and must stay secret.
 - `FRONTEND_URL` is the website address allowed to call the backend.
 
-**Remember:** Put real values in Vercel Environment Variables, not in this file.
+**Remember:** Put real values in a local `.env` file or in Vercel Environment Variables, never in Git.
 
 ## The Supabase MCP Note — `.vscode/mcp.json`
 
@@ -57,9 +57,8 @@ These notes teach coding helpers how to work carefully with Supabase.
 
 - It builds the whole web app.
 - It connects the kitchen to Supabase (the big refrigerator where all data lives).
-- It turns on every feature (login, tutors, bookings, payments, students).
+- It turns on every feature (signup, tutors, bookings, payments, students, profiles).
 - It has one "is the kitchen open?" note (the `/` page) that says _"Yes, we are running!"_.
-- It also has a note that saves a new tutor (`/tutors/`).
 
 **Remember:** This is the file you run to start everything.
 
@@ -69,13 +68,14 @@ These notes teach coding helpers how to work carefully with Supabase.
 
 This file is the **key to the big refrigerator** (Supabase).
 
-- It reads two secret things from the hidden `.env` file:
-  - The refrigerator's **address** (SUPABASE_URL).
-  - The refrigerator's **key** (SUPABASE_KEY).
+- It takes the refrigerator's **address** and **key** from the secret book (`app/config.py`).
 - If those secrets are missing, it stops and says: _"I need the address and key!"_
 - Then it creates one shared connection called `supabase` that every other file uses.
+- It also has `new_auth_client()`, a **throwaway** connection used only when making a new account.
+  Why? The shared connection listens for logins. If it saw the new person's login key it would start using
+  that key for everyone's requests. The throwaway connection is dropped right after signup, so that never happens.
 
-**Remember:** One shared key. Every cook uses it.
+**Remember:** One shared key for the tables. A fresh, disposable key for signups.
 
 ---
 
@@ -83,12 +83,12 @@ This file is the **key to the big refrigerator** (Supabase).
 
 This file is the **secret book**.
 
-- It reads the same secret address and key from the `.env` file.
-- It also reads `RESEND_API_KEY` for OTP and reset emails.
+- It reads the secret address and key from the `.env` file.
+- It also reads `FRONTEND_URL` (the website allowed to call the kitchen) and trims any trailing `/`.
 - It puts them into a box called `settings`.
-- Other files ask `settings` when they need the address, the key, or the email service key.
+- Other files ask `settings` when they need the address, the key, or the website address.
 
-**Remember:** Same secrets as `database.py`; it just stores them in a neat box.
+**Remember:** This is the only file that reads `.env`.
 
 ---
 
@@ -108,48 +108,20 @@ This file is the **ticket checker** at the kitchen door.
 
 ## The Front Door — `app/routers/auth.py`
 
-This file is the **front door** of the whole app. It handles everything about people's accounts.
-
-The web addresses here all start with `/auth`.
+This file is the **front door** of the whole app. It does one thing: make new accounts.
+Logging in, logging out, the 6-digit email code, and password resets are done by the phone app
+directly with Supabase, so the kitchen does not need doors for them.
 
 - **`POST /auth/signup`** — **Make a new account.**
-  - Takes the email, password, full name, username, role (student or tutor), birthday, gender, and address.
-  - Asks Supabase to create the user account safely.
-  - If the role is `student`, automatically inserts the student details (`full_name`, `username`, `email`, `date_of_birth`, `gender`, `address`) into the `students` table in Supabase.
-  - If the email is already used, says **"this email already exists"**.
-  - If the password is too easy, says **"password too weak"**.
-  - Tells you if you must still click a link in your email (email confirmation).
+  - Takes the email, password, role (`student` or `tutor` — required), full name, username, birthday, gender, and address.
+  - Checks every value with the shared rules first (see `app/schemas/profile.py`), so a bad form never creates a half account.
+  - Asks Supabase to create the user account using a throwaway connection (see `app/database.py`).
+  - Saves the details into the **`students`** table or the **`tutors`** table depending on the role.
+  - If the email is already used, says **"this email already exists"** (also when Supabase hides that fact behind a fake user).
+  - If the username is already used, says **"that username is already taken"** and removes the half-made account so the email can be retried.
+  - Tells you if you must still confirm your email before signing in.
 
-- **`POST /auth/login`** — **Open the door with email + password.**
-  - Asks Supabase to check the email and password.
-  - If they are wrong, says **"Invalid email or password."**
-  - If the email was never confirmed, says **"please confirm your email first."**
-  - If everything is good, it hands back a **login key** (token) plus the user's ID.
-
-- **`POST /auth/logout`** — **Close the door.**
-  - Tells Supabase to forget the session and says _"you are logged out."_
-
-- **`GET /auth/users/me`** — **Show me my details.**
-  - Uses the ticket checker to find who is logged in.
-  - Sends back the ID, email, role, name, and when the account was made.
-
-- **`PUT /auth/users/me`** — **Change my details.**
-  - Lets the user change their name or role.
-  - Saves the change in Supabase and sends back the updated profile.
-
-- **`POST /auth/reset-password`** — **I forgot my password!**
-  - Sends a "make a new password" link to the user's email.
-
-- **`POST /auth/send-otp`** — **Send a one-time email code.**
-  - Creates a 6-digit code and sends it through Resend to the email address.
-  - Stores the code in the `otp_codes` table so it can be checked later.
-
-- **`POST /auth/verify-otp`** — **Check the one-time email code.**
-  - Reads the newest stored code for that email and checks if it matches what the user typed.
-  - If it matches, creates the account and sends the browser back to the frontend sign-in page.
-  - If it does not match, says **"Invalid OTP code."**
-
-**Remember:** This is the most important door in the app — everyone comes through here.
+**Remember:** One note, one account, one profile row — all or nothing.
 
 ---
 
@@ -157,41 +129,49 @@ The web addresses here all start with `/auth`.
 
 This file makes **boxes** that hold the data for the front door.
 
-Each box decides what is allowed inside:
+| Box name         | What it holds                                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `UserSignUp`     | Everything from the shared profile box, plus password (at least 8 letters) and role (`student` or `tutor`) |
+| `SignupResponse` | A message, user ID, email, and "do you need email confirmation?"                                           |
 
-| Box name               | What it holds                                                    |
-| ---------------------- | ---------------------------------------------------------------- |
-| `UserSignUp`           | Email, password (at least 8 letters), name, role                 |
-| `UserLogin`            | Email and password                                               |
-| `TokenResponse`        | The login key, user's ID, email, how long the key lasts          |
-| `SignupResponse`       | A message, user ID, email, and "do you need email confirmation?" |
-| `UserResponse`         | ID, email, role, name, and when the account was made             |
-| `UserProfileUpdate`    | The new name and/or role                                         |
-| `PasswordResetRequest` | Just an email                                                    |
+Extra rule inside `UserSignUp`: a tutor must be at least 18 years old.
 
 **Remember:** Boxes keep data tidy so nothing wrong gets through.
 
 ---
 
-## The Study Notes Room — `app/routers/study.py`
+## The Shared Profile Box — `app/schemas/profile.py`
 
-This file handles **study materials** (like card sheets or lesson notes). Protected by the ticket checker.
+This file holds the personal details **every** user gives us, and the rules that check them, in one place.
+Signup, the student box, and the tutor box all reuse it, so a rule is never written twice.
 
-- **`POST /study/materials`** — Save a new study material (title, description, subject) for the logged-in user.
-- **`GET /study/materials`** — Show all study materials that belong to the logged-in user.
+| Box name            | What it holds                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `ProfileFieldsBase` | full_name, username, email, date_of_birth, gender, address + all their safety checks |
+| `ProfileMeResponse` | The "who am I?" answer: the fields above plus `id`, `role`, and `avatar_url`        |
 
-**Remember:** You must be logged in, and you only see YOUR OWN materials.
+Safety checks inside the shared box:
+
+- `full_name` — only letters, spaces, dots, hyphens, apostrophes allowed.
+- `username` — only letters, numbers, underscores, hyphens allowed (3–30 long).
+- `date_of_birth` — must be a real past date, age 5–100 (tutors: 18–100).
+- `gender` — must be `Male`, `Female`, or `Other`.
+- The box also accepts `fullName` / `dateOfBirth` spellings from the phone app.
+
+**Remember:** One set of rules, used everywhere.
 
 ---
 
-## The Study Note Box Maker — `app/schemas/study.py`
+## The "Who Am I?" Room — `profiles.py`
 
-This file makes the **boxes** for study materials.
+This file answers the app's first question after login. The web address starts with `/profiles`.
 
-- `StudyMaterialCreate` — The note shape when saving (title, description, subject).
-- `StudyMaterialResponse` — The saved note shape with an ID and the owner's user ID.
+- **`GET /profiles/me`** _(login required)_ — Looks for the logged-in person in the `tutors` table, then the `students` table.
+  - Sends back their details plus `role` = `tutor` or `student`, depending on where they were found.
+  - The app uses this to pick the tutor or student home screen and to show the real name.
+  - If no row exists in either table: error `404`.
 
-**Remember:** Small file, just two boxes.
+**Remember:** The tables decide the role — not the phone, not a saved setting.
 
 ---
 
@@ -318,7 +298,6 @@ This is the kitchen's **shopping list** of tools to install:
 - `supabase` — the key to talk to the refrigerator.
 - `python-dotenv` — the tool that reads the secret `.env` file.
 - `pydantic[email]` — the box checker (also checks emails look like emails).
-- `httpx` — the postman used to talk to Supabase's services.
 
 **Remember:** Run `pip install -r requirements.txt` once after cloning to install everything.
 
@@ -329,7 +308,20 @@ This is the kitchen's **shopping list** of tools to install:
 A hidden file that holds secrets (never share it!):
 
 - `SUPABASE_URL` — the address of the refrigerator.
-- `SUPABASE_KEY` — the secret key that opens the refrigerator.
-- `ENVIRONMENT` — says we are in the "development" (testing) stage.
+- `SUPABASE_KEY` — the secret service-role key that opens the refrigerator.
+- `FRONTEND_URL` — the website allowed to call the kitchen (optional while testing).
 
 **Remember:** Never put `.env` secrets in the public repo. It is already in `.gitignore`.
+
+---
+
+## The Self-Check — `test_signup.py`
+
+A tiny script that pretends to be Supabase and runs the signup door five times (tutor, student, taken email,
+taken username, database trouble) to make sure it answers correctly. Run it after touching `app/routers/auth.py`:
+
+```bash
+SUPABASE_URL=https://x.supabase.co SUPABASE_KEY=x .venv/bin/python test_signup.py
+```
+
+**Remember:** No network needed; it finishes in a second.

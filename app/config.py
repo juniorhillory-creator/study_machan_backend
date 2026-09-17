@@ -6,9 +6,8 @@ load_dotenv()  # Read the hidden environment file in the project folder.
 
 class Settings:  # Keep all secret configuration values in one easy place.
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")  # The Supabase project address for database and auth calls.
-    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")  # The secret server key used for authenticated Supabase calls.
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "")  # The browser origin allowed to call this backend.
-    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")  # The email service key used to send OTP or reset messages.
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")  # The secret server (service role) key used for Supabase calls.
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "").rstrip("/")  # The browser origin allowed to call this backend (a trailing slash would break the CORS check, so it is removed).
 
 
 settings = Settings()  # Build the shared configuration object the rest of the app can import.
