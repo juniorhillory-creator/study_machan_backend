@@ -35,3 +35,9 @@ class SignupResponse(BaseModel):
     user_id: str  # The new user's ID number.
     email: EmailStr  # The email address that was used to sign up.
     needs_email_confirmation: bool  # True if the user must still confirm their email before logging in.
+
+
+# The box for signing in an existing user.
+class UserSignIn(BaseModel):
+    email: EmailStr  # The user's email address.
+    password: str  # The user's password.

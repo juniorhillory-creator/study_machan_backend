@@ -9,7 +9,7 @@ from postgrest.exceptions import APIError  # The error Supabase raises when a ta
 from supabase import AuthApiError, AuthWeakPasswordError  # The errors Supabase Auth raises when signup fails.
 
 from app.database import new_auth_client, supabase  # A throwaway client for sign_up, and the shared client for tables.
-from app.schemas.auth import SignupResponse, UserSignUp  # The signup request box and the answer box.
+from app.schemas.auth import SignupResponse, UserSignUp, UserSignIn  # The signup request box and the answer box.
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])  # Group every web address here under /auth.
 
@@ -94,3 +94,34 @@ def signup(payload: UserSignUp):
         email=payload.email,  # Give the app the email that was used.
         needs_email_confirmation=needs_confirmation,  # Tell the app whether it must ask the user to confirm their email.
     )
+
+
+# Sign in an existing user. Returns access and refresh tokens.
+@router.post("/signin")
+def signin(payload: UserSignIn):
+    try:  # Try to sign in the user with Supabase Auth.
+        response = new_auth_client().auth.sign_in_with_password({  # Use a fresh client.
+            "email": payload.email,  # The user's email.
+            "password": payload.password,  # The user's password.
+        })
+    except AuthApiError as e:  # If Supabase rejects the credentials...
+        raise HTTPException(  # ...stop and send back an error.
+            status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401 (unauthorized).
+            detail="Invalid email or password.",  # Clear reason without leaking which field is wrong.
+        )
+    if not response.session or not response.user:  # If Supabase did not return a session or user...
+        raise HTTPException(  # ...tell the user.
+            status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401.
+            detail="Email not confirmed. Please check your inbox.",  # Explain what to do.
+        )
+    user = response.user  # Type guard: user is guaranteed non-None here.
+    return {  # Send back the tokens and user info.
+        "access_token": response.session.access_token,  # The short-lived token for API calls.
+        "refresh_token": response.session.refresh_token,  # The long-lived token to get new access tokens.
+        "user": {  # Basic user info.
+            "id": user.id,
+            "email": user.email,
+            "role": user.user_metadata.get("role"),
+            "full_name": user.user_metadata.get("full_name"),
+        },
+    }
