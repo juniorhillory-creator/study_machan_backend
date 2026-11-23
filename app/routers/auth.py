@@ -105,9 +105,16 @@ def signin(payload: UserSignIn):
             "password": payload.password,  # The user's password.
         })
     except AuthApiError as e:  # If Supabase rejects the credentials...
+        print(f"Signin AuthApiError: code={e.code}, message={e.message}")  # Log the exact error.
         raise HTTPException(  # ...stop and send back an error.
             status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401 (unauthorized).
             detail="Invalid email or password.",  # Clear reason without leaking which field is wrong.
+        )
+    except Exception as e:  # Catch any other unexpected error.
+        print(f"Signin unexpected error: {type(e).__name__}: {e}")  # Log it.
+        raise HTTPException(  # Return 500.
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Sign in failed due to server error.",
         )
     if not response.session or not response.user:  # If Supabase did not return a session or user...
         raise HTTPException(  # ...tell the user.
