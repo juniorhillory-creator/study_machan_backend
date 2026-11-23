@@ -55,7 +55,7 @@ def signup(payload: UserSignUp):
             detail="An account with this email already exists.",  # Explain the problem to the user.
         )
 
-    profile_row = {  # The personal details that go into the students or tutors table.
+    profile_row: dict = {  # The personal details that go into the students or tutors table.
         "id": user.id,  # Use the user's new ID number so the row and the auth account match.
         "full_name": payload.full_name,  # The full name.
         "username": payload.username,  # The username.
@@ -71,6 +71,7 @@ def signup(payload: UserSignUp):
     try:  # Try to save the profile row.
         supabase.table(table).insert(profile_row).execute()  # Insert (not upsert) so an existing row is never silently overwritten.
     except APIError as error:  # If the database rejects the row...
+        print(f"Supabase error: code={error.code}, message={error.message}, details={error.details}, hint={error.hint}")  # Log the exact database error for debugging.
         _delete_auth_user(user.id)  # ...remove the half-made account so the email can be used again.
         if error.code == "23505":  # Postgres code 23505 means "a unique value already exists" (for example the username).
             raise HTTPException(  # Tell the app which value clashed.
@@ -79,7 +80,7 @@ def signup(payload: UserSignUp):
             ) from error  # Keep the original database error for server logs.
         raise HTTPException(  # For any other database problem...
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # ...use error number 500.
-            detail=f"Account was created, but the {payload.role} profile could not be saved.",  # Give the app a safe, useful message.
+            detail=f"Account was created, but the {payload.role} profile could not be saved. DB error: code={error.code}, msg={error.message}, details={error.details}",  # Give the app a safe, useful message.
         ) from error  # Keep the original database error for server logs.
 
     needs_confirmation = response.session is None  # If Supabase did NOT give a login key, the user must still confirm their email.
