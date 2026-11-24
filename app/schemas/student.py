@@ -169,8 +169,8 @@ class StudentProfileUpdate(BaseModel):
         if parsed >= date.today():  # Birthday must be in the past.
             raise ValueError("date_of_birth must be in the past.")  # Tell the app date must be past.
         age = (date.today() - parsed).days // 365  # Calculate age in years.
-        if age < 5 or age > 100:  # Student age must be 5-100.
-            raise ValueError("Student age must be between 5 and 100 years.")  # Tell the app age is invalid.
+        if age < 10 or age > 100:  # Student age must be 10-100 per frontend spec.
+            raise ValueError("Student age must be between 10 and 100 years.")  # Tell the app age is invalid.
         return v  # Return valid date string.
 
     # Custom check: make sure gender is valid if provided.
@@ -202,5 +202,48 @@ class StudentProfileUpdate(BaseModel):
                 s.strip() for s in self.subjects_of_interest if s.strip()
             ]
         return self  # Return cleaned update model.
+
+
+class StudentDashboardResponse(BaseModel):
+    weekly_goal_hours: int = 10
+    hours_completed: float = 0.0
+    active_streak: int = 0
+    upcoming_session: Optional[dict] = None
+    profile: Optional[dict] = None
+
+
+class FocusSessionLogRequest(BaseModel):
+    duration_minutes: int = Field(..., ge=1, le=240)
+
+
+class StudyBlockCreate(BaseModel):
+    title: str = Field(..., min_length=2, max_length=100)
+    subject: str = Field(..., min_length=2, max_length=100)
+    date: str = Field(..., description="YYYY-MM-DD")
+    start_time: str = Field(..., description="HH:MM")
+    end_time: str = Field(..., description="HH:MM")
+    color_tag: str = Field(default="#FF6B35")
+
+
+class StudyBlockResponse(BaseModel):
+    id: str
+    student_id: str
+    title: str
+    subject: str
+    date: str
+    start_time: str
+    end_time: str
+    color_tag: str
+    created_at: Optional[str] = None
+
+
+class FriendResponse(BaseModel):
+    id: str
+    full_name: str
+    avatar_url: Optional[str] = None
+    target_exam: str = "A/L"
+    batch_year: str = "2025"
+    is_online: bool = True
+
 
 

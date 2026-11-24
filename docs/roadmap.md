@@ -60,7 +60,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import payment; print('Payment engine OK')"`
   - **Planned Commit**: `feat(payments): implement server-side fee quotes and secure PayHere webhook verification`
 
-- [ ] **STEP-07: Student Feature Domain Alignment**
+- [x] **STEP-07: Student Feature Domain Alignment**
   - **ID**: `STEP-07`
   - **Goal**: Implement student dashboard (`GET /students/me/dashboard`), bookmarks CRUD (`/students/me/bookmarks`), Pomodoro focus session logging (`POST /students/me/focus-sessions`), study blocks/schedule (`GET /students/me/schedule`), and study buddies (`GET /students/me/friends`).
   - **Screens Served**: Screen 7 (`student-home.tsx`), Screen 13 (`saved-tutors.tsx`), Screen 14 (`stay-focus.tsx`), Screen 15 (`connect-friends.tsx`), Screen 16 (`schedule.tsx`), Screen 21 (`settings.tsx`)
