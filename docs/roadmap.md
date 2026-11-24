@@ -69,7 +69,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import student; print('Student domain OK')"`
   - **Planned Commit**: `feat(student): implement student dashboard, bookmarks, focus timer, and schedule endpoints`
 
-- [ ] **STEP-08: Tutor Feature Domain Alignment**
+- [x] **STEP-08: Tutor Feature Domain Alignment**
   - **ID**: `STEP-08`
   - **Goal**: Implement tutor dashboard (`GET /tutors/me/dashboard`), status toggles (`PATCH /tutors/me/status`), earnings overview & withdrawals (`/tutors/me/earnings`, `/tutors/me/payouts/withdraw`), bank accounts CRUD (`/tutors/me/bank-accounts`), payout history (`/tutors/me/payouts`), verification document uploads (`/tutors/me/verification/upload`), enrolled student roster (`/tutors/me/students`), and reviews (`/tutors/me/reviews`).
   - **Screens Served**: Screen 23 (`tutor-home.tsx`), Screen 24 (`earnings.tsx`), Screen 25 (`managebankaccounts.tsx`), Screen 26 (`payout-history.tsx`), Screen 28 (`my-students.tsx`), Screen 30 (`reviews.tsx`), Screen 32 (`verification.tsx`), Screen 33 (`view-schedule.tsx`)
