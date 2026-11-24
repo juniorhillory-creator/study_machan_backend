@@ -33,7 +33,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `Test-Path supabase/migrations/20261125000000_production_schema.sql`
   - **Planned Commit**: `feat(schema): create authoritative PostgreSQL schema and RLS policies migration`
 
-- [ ] **STEP-04: Role Authorization Dependencies**
+- [x] **STEP-04: Role Authorization Dependencies**
   - **ID**: `STEP-04`
   - **Goal**: Implement `require_student`, `require_tutor`, and token ownership dependencies in `app/dependencies.py` to prevent IDOR and cross-role privilege escalation.
   - **Screens Served**: All protected student & tutor routes
