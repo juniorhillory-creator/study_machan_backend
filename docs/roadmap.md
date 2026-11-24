@@ -105,7 +105,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe tests/test_api.py`
   - **Planned Commit**: `test(api): add comprehensive test suite covering validation, bookings, fees, and auth`
 
-- [ ] **STEP-12: Final Documentation & Production Handoff**
+- [x] **STEP-12: Final Documentation & Production Handoff**
   - **ID**: `STEP-12`
   - **Goal**: Update `README.md`, `.env.example`, `API.md` with complete documentation, run final `ponytail-audit`, `ponytail-review`, and `ponytail-debt`, and deliver final report.
   - **Screens Served**: Project deliverables
