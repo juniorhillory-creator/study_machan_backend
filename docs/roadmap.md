@@ -87,7 +87,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import app.routers.messaging; print('Messaging OK')"`
   - **Planned Commit**: `feat(messaging): implement chat conversations, messages, and notification alerts`
 
-- [ ] **STEP-10: Dead Code Removal & Consolidation Pass**
+- [x] **STEP-10: Dead Code Removal & Consolidation Pass**
   - **ID**: `STEP-10`
   - **Goal**: Remove duplicate tutor search route from `student.py`, remove empty booking/payment stubs, eliminate unused imports, and generate Deletion Log.
   - **Screens Served**: Backend codebase health
