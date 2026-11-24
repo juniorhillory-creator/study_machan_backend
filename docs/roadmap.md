@@ -96,7 +96,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import main; print('Clean build OK')"`
   - **Planned Commit**: `refactor(cleanup): remove redundant tutor search route, dead stubs, and unused imports`
 
-- [ ] **STEP-11: Production Verification Test Suite**
+- [x] **STEP-11: Production Verification Test Suite**
   - **ID**: `STEP-11`
   - **Goal**: Create automated tests for auth, validation, booking fee breakdown, PayHere hash calculation, and authorization guards under `tests/`.
   - **Screens Served**: Quality assurance across all screens
