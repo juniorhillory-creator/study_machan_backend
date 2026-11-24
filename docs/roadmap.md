@@ -42,7 +42,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import app.dependencies; print('Dependencies OK')"`
   - **Planned Commit**: `feat(auth): implement role-enforcing dependency guards and ownership validation`
 
-- [ ] **STEP-05: Real Booking & Session Engine Implementation**
+- [x] **STEP-05: Real Booking & Session Engine Implementation**
   - **ID**: `STEP-05`
   - **Goal**: Replace `booking.py` stub with real Supabase persistence: `POST /sessions/` (create reservation), `GET /sessions/` (filter by status: upcoming/completed/cancelled), `POST /sessions/{id}/reschedule`, and conflict detection to prevent double-booking tutor slots.
   - **Screens Served**: Screen 9 (`book1-session.tsx`), Screen 10 (`book2-session.tsx`), Screen 11 (`payment-confirmed.tsx`), Screen 12 (`my-sessions.tsx`), Screen 27 (`sessions.tsx`)
