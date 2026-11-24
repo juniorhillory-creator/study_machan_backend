@@ -24,7 +24,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe test_signup.py`
   - **Planned Commit**: `feat(validation): enforce strict age, gender, and field constraints per frontend contract`
 
-- [ ] **STEP-03: Relational Schema & SQL Migration Creation**
+- [x] **STEP-03: Relational Schema & SQL Migration Creation**
   - **ID**: `STEP-03`
   - **Goal**: Author comprehensive SQL migration defining all 12 relational tables (`profiles`, `students`, `tutors`, `tutor_verifications`, `sessions`, `reviews`, `bank_accounts`, `payouts`, `conversations`, `messages`, `focus_logs`, `notifications`, `student_bookmarks`), foreign keys, enums, constraints, and RLS policies.
   - **Screens Served**: All 35 screens
