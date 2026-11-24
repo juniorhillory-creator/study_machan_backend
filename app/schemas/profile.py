@@ -54,9 +54,9 @@ class ProfileFieldsBase(BaseModel):
         ...,  # Required.
         description="Date of birth in YYYY-MM-DD format",  # A short explanation.
     )
-    gender: str = Field(  # The gender (Male, Female, or Other).
+    gender: Literal["Male", "Female", "Other"] = Field(  # Strict gender enum.
         ...,  # Required.
-        description="Gender: Male, Female, or Other",  # A short explanation.
+        description="Gender: Male, Female, or Other",
     )
     address: str = Field(  # The home address.
         ...,  # Required.
@@ -99,8 +99,8 @@ class ProfileFieldsBase(BaseModel):
             raise ValueError("date_of_birth is not a valid calendar date.")  # Tell the app.
         if parsed >= date.today():  # The birthday must be in the past — you cannot be born in the future.
             raise ValueError("date_of_birth must be in the past.")  # Tell the app.
-        if not 5 <= age_in_years(parsed) <= 100:  # A person must be between 5 and 100 years old.
-            raise ValueError("Age must be between 5 and 100 years.")  # Tell the app.
+        if not 10 <= age_in_years(parsed) <= 100:  # A person must be between 10 and 100 years old per frontend spec.
+            raise ValueError("Age must be between 10 and 100 years.")  # Tell the app.
         return v  # Return the valid date string.
 
     # Custom check: make sure gender is one of the three allowed words.

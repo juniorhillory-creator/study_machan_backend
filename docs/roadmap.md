@@ -15,7 +15,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import main; print('OK')"`
   - **Planned Commit**: `fix(core): sanitize errors, normalize CORS allowlist, and add healthcheck endpoint`
 
-- [ ] **STEP-02: Strict Validation & Profile Schema Alignment**
+- [x] **STEP-02: Strict Validation & Profile Schema Alignment**
   - **ID**: `STEP-02`
   - **Goal**: Align validation rules: enforce student minimum age $\ge 10$, tutor minimum age $\ge 18$, strict gender enum (`Male`, `Female`, `Other`), name/username sanitization, and LKR rate limits.
   - **Screens Served**: Screen 3 (`create-account.tsx`), Screen 17 (`profile.tsx`), Screen 31 (`tutor-profile.tsx`)
