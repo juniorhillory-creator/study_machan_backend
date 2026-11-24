@@ -4,6 +4,7 @@
 # are done by the phone app directly with Supabase, so they do not live here.
 # Every line below has a simple comment explaining what it does.
 
+import logging  # Structured logging instead of raw prints.
 from fastapi import APIRouter, HTTPException, status  # Tools from the FastAPI web framework: route group, error, and status numbers.
 from postgrest.exceptions import APIError  # The error Supabase raises when a table write fails (it carries the Postgres error code).
 from supabase import AuthApiError, AuthWeakPasswordError  # The errors Supabase Auth raises when signup fails.
@@ -11,6 +12,7 @@ from supabase import AuthApiError, AuthWeakPasswordError  # The errors Supabase 
 from app.database import new_auth_client, supabase  # A throwaway client for sign_up, and the shared client for tables.
 from app.schemas.auth import SignupResponse, UserSignUp, UserSignIn  # The signup request box and the answer box.
 
+logger = logging.getLogger(__name__)  # Standard module logger.
 router = APIRouter(prefix="/auth", tags=["Authentication"])  # Group every web address here under /auth.
 
 
@@ -71,7 +73,7 @@ def signup(payload: UserSignUp):
     try:  # Try to save the profile row.
         supabase.table(table).insert(profile_row).execute()  # Insert (not upsert) so an existing row is never silently overwritten.
     except APIError as error:  # If the database rejects the row...
-        print(f"Supabase error: code={error.code}, message={error.message}, details={error.details}, hint={error.hint}")  # Log the exact database error for debugging.
+        logger.error("Supabase insert error: code=%s, message=%s, details=%s, hint=%s", error.code, error.message, error.details, error.hint)
         _delete_auth_user(user.id)  # ...remove the half-made account so the email can be used again.
         if error.code == "23505":  # Postgres code 23505 means "a unique value already exists" (for example the username).
             raise HTTPException(  # Tell the app which value clashed.
@@ -80,7 +82,7 @@ def signup(payload: UserSignUp):
             ) from error  # Keep the original database error for server logs.
         raise HTTPException(  # For any other database problem...
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # ...use error number 500.
-            detail=f"Account was created, but the {payload.role} profile could not be saved. DB error: code={error.code}, msg={error.message}, details={error.details}",  # Give the app a safe, useful message.
+            detail=f"Account was created, but the {payload.role} profile could not be saved. Please try again.",  # Sanitized safe message.
         ) from error  # Keep the original database error for server logs.
 
     needs_confirmation = response.session is None  # If Supabase did NOT give a login key, the user must still confirm their email.
@@ -105,13 +107,13 @@ def signin(payload: UserSignIn):
             "password": payload.password,  # The user's password.
         })
     except AuthApiError as e:  # If Supabase rejects the credentials...
-        print(f"Signin AuthApiError: code={e.code}, message={e.message}")  # Log the exact error.
+        logger.warning("Signin AuthApiError: code=%s, message=%s", e.code, e.message)
         raise HTTPException(  # ...stop and send back an error.
             status_code=status.HTTP_401_UNAUTHORIZED,  # Use error number 401 (unauthorized).
             detail="Invalid email or password.",  # Clear reason without leaking which field is wrong.
         )
     except Exception as e:  # Catch any other unexpected error.
-        print(f"Signin unexpected error: {type(e).__name__}: {e}")  # Log it.
+        logger.error("Signin unexpected error: %s: %s", type(e).__name__, e)
         raise HTTPException(  # Return 500.
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Sign in failed due to server error.",

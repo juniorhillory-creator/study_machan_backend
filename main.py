@@ -16,22 +16,28 @@ app = FastAPI(  # Build the main app once with a clear title and version.
     version="1.0.0",  # Record the API version number for the team.
 )
 
-allowed_origins = [settings.FRONTEND_URL] if settings.FRONTEND_URL else ["*"]  # Use the configured frontend origin or allow local testing when no specific origin is set.
-
 app.add_middleware(  # Add CORS rules so the browser can reach the backend.
     CORSMiddleware,  # The FastAPI helper that checks allowed origins.
-    allow_origins=allowed_origins,  # Allow the configured frontend or all origins when no browser origin is fixed.
-    allow_credentials=bool(settings.FRONTEND_URL),  # Only allow credentialed browser requests when a known frontend origin exists.
+    allow_origins=settings.ALLOWED_ORIGINS,  # Allow configured frontend and local development origins.
+    allow_credentials=True,  # Allow credentials (cookies / Authorization headers) across origins.
     allow_methods=["*"],  # Accept all request methods, such as GET, POST, PUT, and DELETE.
     allow_headers=["*"],  # Accept common headers like Authorization and Content-Type.
 )
 
 
-@app.get("/")  # Create the app health-check route at the site root.
-def home():  # Return a message that tells the caller the app is alive.
-    return {  # Send back a small JSON object.
-        "message": "StudyMachan Backend is running!",  # Tell the caller the backend is awake.
-        "status": "success",  # Mark the health check as successful.
+@app.get("/")  # Root endpoint.
+def home():
+    return {
+        "message": "StudyMachan Backend is running!",
+        "status": "success",
+    }
+
+
+@app.get("/health")  # Explicit Render deployment health check endpoint.
+def health():
+    return {
+        "status": "healthy",
+        "service": "studymachan-backend",
     }
 
 
