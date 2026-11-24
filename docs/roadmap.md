@@ -51,7 +51,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import booking; print('Booking engine OK')"`
   - **Planned Commit**: `feat(booking): implement real session booking engine with slot conflict prevention`
 
-- [ ] **STEP-06: Payment Gateway & PayHere Webhook Verification**
+- [x] **STEP-06: Payment Gateway & PayHere Webhook Verification**
   - **ID**: `STEP-06`
   - **Goal**: Replace `payment.py` stub with server-side fee calculation (`POST /sessions/quote`), PayHere checkout parameter generation, payment history ledger (`GET /payments/history`), and secure server-to-server webhook verification using PayHere MD5 signature (`md5sig`).
   - **Screens Served**: Screen 10 (`book2-session.tsx`), Screen 11 (`payment-confirmed.tsx`), Screen 19 (`payments.tsx`)
