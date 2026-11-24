@@ -78,7 +78,7 @@ This is the authoritative, ordered execution checklist for bringing the backend 
   - **Verification Command**: `.\.venv\Scripts\python.exe -c "import tutors; print('Tutor domain OK')"`
   - **Planned Commit**: `feat(tutors): implement tutor dashboard, earnings, bank accounts, verification, and reviews`
 
-- [ ] **STEP-09: Messaging & Notification Feed Implementation**
+- [x] **STEP-09: Messaging & Notification Feed Implementation**
   - **ID**: `STEP-09`
   - **Goal**: Implement real-time conversation endpoints (`GET /conversations/`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/messages`) and notifications feed (`GET /notifications/`, `PATCH /notifications/{id}/read`).
   - **Screens Served**: Screen 18 (`alerts.tsx`), Screen 29 (`messages.tsx`)

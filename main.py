@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware  # Allow the frontend or mobi
 
 from app.config import settings  # Read the browser origin and service keys from the environment file.
 from app.database import supabase  # Force the shared Supabase client to initialize so startup fails early if credentials are missing.
-from app.routers import auth  # Import the authentication router that contains the signup route.
+from app.routers import auth, messaging  # Import authentication and messaging routers.
 import booking  # Import the booking API router so its endpoints are attached to the app.
 import payment  # Import the payment API router so its endpoints are attached to the app.
 import profiles  # Import the profiles API router so the "who am I?" endpoint is attached to the app.
@@ -47,3 +47,4 @@ app.include_router(booking.router)  # Attach booking routes so sessions can be b
 app.include_router(payment.router)  # Attach payment routes so payment endpoints are available.
 app.include_router(student.router)  # Attach student routes so student profiles and lookup routes are available.
 app.include_router(profiles.router)  # Attach the profiles route so the app can ask who is logged in and whether they are a student or tutor.
+app.include_router(messaging.router)  # Attach messaging and notification alerts routes.
