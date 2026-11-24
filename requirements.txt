@@ -3,3 +3,5 @@ uvicorn
 supabase>=2.5
 python-dotenv
 pydantic[email]
+postgrest
+
