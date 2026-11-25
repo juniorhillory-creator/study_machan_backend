@@ -108,6 +108,105 @@ class TutorProfileCreate(ProfileFieldsBase):
             raise ValueError("avatar_url must start with http:// or https://")  # Tell the app.
         return v  # Return the valid URL.
 
+
+class TutorDashboardResponse(BaseModel):
+    earnings_this_week: float = 0.0
+    active_students_count: int = 0
+    average_rating: float = 5.0
+    total_reviews: int = 0
+    instant_support_enabled: bool = True
+    next_class: Optional[dict] = None
+
+
+class TutorStatusUpdate(BaseModel):
+    instant_support_enabled: bool
+
+
+class MonthlyChartItem(BaseModel):
+    month: str
+    amount: float
+
+
+class TutorEarningsResponse(BaseModel):
+    balance_lkr: float = 0.0
+    total_withdrawn: float = 0.0
+    monthly_chart: List[MonthlyChartItem] = []
+    recent_transactions: List[dict] = []
+
+
+class TutorWithdrawRequest(BaseModel):
+    amount: float = Field(..., gt=0.0)
+
+
+class TutorWithdrawResponse(BaseModel):
+    payout_id: str
+    amount: float
+    status: str = "processing"
+    transaction_reference: str
+
+
+class BankAccountCreate(BaseModel):
+    bank_name: str = Field(..., min_length=2, max_length=100)
+    branch_code: Optional[str] = Field(default=None, max_length=50)
+    account_number: str = Field(..., min_length=5, max_length=50)
+    account_holder_name: str = Field(..., min_length=2, max_length=150)
+    nic_number: str = Field(..., min_length=9, max_length=20)
+
+
+class BankAccountResponse(BaseModel):
+    id: str
+    tutor_id: str
+    bank_name: str
+    branch_code: Optional[str] = None
+    account_number_masked: str
+    account_holder_name: str
+    nic_number_masked: str
+    is_primary: bool
+    created_at: Optional[str] = None
+
+
+class PayoutItem(BaseModel):
+    id: str
+    amount: float
+    status: str
+    transaction_reference: str
+    created_at: Optional[str] = None
+
+
+class EnrolledStudentResponse(BaseModel):
+    id: str
+    full_name: str
+    avatar_url: Optional[str] = None
+    subject: str = "Chemistry"
+    syllabus_completion_pct: int = 75
+    total_hours_taught: float = 12.0
+
+
+class ReviewItem(BaseModel):
+    id: str
+    student_name: str
+    rating: int
+    comment: str
+    tutor_reply: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class TutorReviewsResponse(BaseModel):
+    average_rating: float = 5.0
+    total_reviews: int = 0
+    rating_distribution: dict = {5: 90, 4: 8, 3: 2, 2: 0, 1: 0}
+    reviews: List[ReviewItem] = []
+
+
+class ReviewReplyRequest(BaseModel):
+    reply: str = Field(..., min_length=1, max_length=1000)
+
+
+class VerificationStatusResponse(BaseModel):
+    overall_status: str
+    documents: List[dict] = []
+
+
     # Custom check across the whole box: clean up the subjects list (remove blanks).
     @model_validator(mode="after")
     def clean_subjects(self) -> "TutorProfileCreate":
@@ -178,4 +277,103 @@ class TutorProfileUpdate(BaseModel):
         if not v.startswith(("http://", "https://")):  # Check the link starts with http or https.
             raise ValueError("avatar_url must start with http:// or https://")  # Tell the app.
         return v  # Return the valid URL.
+
+
+class TutorDashboardResponse(BaseModel):
+    earnings_this_week: float = 0.0
+    active_students_count: int = 0
+    average_rating: float = 5.0
+    total_reviews: int = 0
+    instant_support_enabled: bool = True
+    next_class: Optional[dict] = None
+
+
+class TutorStatusUpdate(BaseModel):
+    instant_support_enabled: bool
+
+
+class MonthlyChartItem(BaseModel):
+    month: str
+    amount: float
+
+
+class TutorEarningsResponse(BaseModel):
+    balance_lkr: float = 0.0
+    total_withdrawn: float = 0.0
+    monthly_chart: List[MonthlyChartItem] = []
+    recent_transactions: List[dict] = []
+
+
+class TutorWithdrawRequest(BaseModel):
+    amount: float = Field(..., gt=0.0)
+
+
+class TutorWithdrawResponse(BaseModel):
+    payout_id: str
+    amount: float
+    status: str = "processing"
+    transaction_reference: str
+
+
+class BankAccountCreate(BaseModel):
+    bank_name: str = Field(..., min_length=2, max_length=100)
+    branch_code: Optional[str] = Field(default=None, max_length=50)
+    account_number: str = Field(..., min_length=5, max_length=50)
+    account_holder_name: str = Field(..., min_length=2, max_length=150)
+    nic_number: str = Field(..., min_length=9, max_length=20)
+
+
+class BankAccountResponse(BaseModel):
+    id: str
+    tutor_id: str
+    bank_name: str
+    branch_code: Optional[str] = None
+    account_number_masked: str
+    account_holder_name: str
+    nic_number_masked: str
+    is_primary: bool
+    created_at: Optional[str] = None
+
+
+class PayoutItem(BaseModel):
+    id: str
+    amount: float
+    status: str
+    transaction_reference: str
+    created_at: Optional[str] = None
+
+
+class EnrolledStudentResponse(BaseModel):
+    id: str
+    full_name: str
+    avatar_url: Optional[str] = None
+    subject: str = "Chemistry"
+    syllabus_completion_pct: int = 75
+    total_hours_taught: float = 12.0
+
+
+class ReviewItem(BaseModel):
+    id: str
+    student_name: str
+    rating: int
+    comment: str
+    tutor_reply: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class TutorReviewsResponse(BaseModel):
+    average_rating: float = 5.0
+    total_reviews: int = 0
+    rating_distribution: dict = {5: 90, 4: 8, 3: 2, 2: 0, 1: 0}
+    reviews: List[ReviewItem] = []
+
+
+class ReviewReplyRequest(BaseModel):
+    reply: str = Field(..., min_length=1, max_length=1000)
+
+
+class VerificationStatusResponse(BaseModel):
+    overall_status: str
+    documents: List[dict] = []
+
 

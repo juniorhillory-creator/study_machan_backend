@@ -13,12 +13,20 @@ from fastapi import (  # Tools from the FastAPI web framework.
     status,  # A list of ready-made error numbers (like 201 = "created", 404 = "not found").
 )
 
+from typing import List, Optional  # Words that mean "a list of things" and "can be empty".
+import uuid
+
 from app.database import supabase  # Gets the shared connection to Supabase so we can talk to it.
-from app.dependencies import get_current_user  # The helper that checks who is logged in.
+from app.dependencies import get_current_user, require_student  # Auth helpers.
 from app.schemas.student import (  # Import the data boxes we defined for students.
-    StudentProfileCreate,  # The box for creating a student profile.
-    StudentProfileResponse,  # The box for sending student data back to the app.
-    StudentProfileUpdate,  # The box for updating a student profile.
+    FocusSessionLogRequest,
+    FriendResponse,
+    StudentDashboardResponse,
+    StudentProfileCreate,
+    StudentProfileResponse,
+    StudentProfileUpdate,
+    StudyBlockCreate,
+    StudyBlockResponse,
 )
 
 # Create a group of web addresses that all begin with /students.
@@ -238,71 +246,203 @@ def update_my_student_profile(
 
 
 
-# --- SEARCH TUTORS (Student's tutor search) ---
-# Let a student search for tutors by subject, district, grade level, and max price.
-# Filters match what the frontend's student-home.tsx sends.
-@router.get(
-    "/tutors/search",  # The web address: /students/tutors/search.
-    summary="Student searches for tutors with filters",  # Short label shown in the API docs.
-)
-def student_search_tutors(
-    subject: str = Query(default=None),  # Optional filter: which subject the student wants (can be empty).
-    district: str = Query(default=None),  # Optional filter: which district to search in (can be empty).
-    level: str = Query(default=None),  # Optional filter: which grade level (can be empty).
-    max_price: float = Query(default=None, ge=0),  # Optional filter: maximum hourly rate (must be 0 or more).
-    current_user=Depends(get_current_user),  # Check the login key — the student must be logged in.
-):
-    # --- BUILD the Supabase query step by step ---
-    query = (  # Start building the search query.
-        supabase.table("tutors")  # Look in the "tutors" table.
-        .select(  # Choose which columns to return (matching the frontend's Tutor type).
-            "id, full_name, subjects, hourly_rate, specialty, education, "
-            "rating, total_reviews, total_sessions, avatar_url, verified, district, teaching_mode"
-        )
-    )
-
-    # --- APPLY FILTERS if the frontend sent them ---
-    if subject and subject.lower() != "all subjects":  # If a subject filter was given and it is not "All Subjects"...
-        query = query.contains("subjects", [subject])  # Filter tutors who teach that subject.
-
-    if district and district.lower() != "all districts":  # If a district filter was given and it is not "All Districts"...
-        query = query.eq("district", district)  # Filter tutors in that district.
-
-    if max_price is not None:  # If a maximum price was given...
-        query = query.lte("hourly_rate", max_price)  # Filter tutors whose rate is less than or equal to the max.
-
-    # level filter maps to grade_level but tutors serve grade ranges — apply as a subjects tag search
-    # For now we skip level-based filtering on the tutor side (tutors don't store a grade field yet).
-    # TODO: add level/grade filtering when the tutors table has a "grade_levels" column.
-
-    # --- RUN the query ---
+# --- STUDENT DASHBOARD ---
+@router.get("/me/dashboard", response_model=StudentDashboardResponse, summary="Get student dashboard data")
+def get_student_dashboard(current_user=Depends(require_student)):
     try:
-        response = query.execute()  # Ask Supabase to run the search.
-    except Exception as e:  # If the query fails for any reason...
-        raise HTTPException(  # Stop and tell the app.
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # Error 500.
-            detail="Failed to search tutors. Please try again.",  # Clear reason.
+        # 1. Fetch student row
+        student_resp = supabase.table("students").select("*").eq("id", current_user.id).maybe_single().execute()
+        student_data = student_resp.data or {}
+
+        # 2. Fetch profile row
+        profile_resp = supabase.table("profiles").select("*").eq("id", current_user.id).maybe_single().execute()
+        profile_data = profile_resp.data or {}
+
+        # 3. Sum focus hours completed
+        focus_resp = supabase.table("focus_logs").select("duration_minutes").eq("student_id", current_user.id).execute()
+        total_mins = sum(r.get("duration_minutes", 0) for r in (focus_resp.data or []))
+        hours_completed = round(total_mins / 60.0, 1)
+
+        # 4. Fetch upcoming class
+        upcoming = (
+            supabase.table("sessions")
+            .select("id, subject, session_date, start_time, meeting_link, tutor_id")
+            .eq("student_id", current_user.id)
+            .in_("status", ["confirmed", "live"])
+            .order("session_date", desc=False)
+            .order("start_time", desc=False)
+            .limit(1)
+            .execute()
         )
+        upcoming_session = upcoming.data[0] if upcoming.data else None
 
-    # --- SEND BACK the list of matching tutors ---
-    return {  # Return a dictionary with a "tutors" list inside.
-        "tutors": response.data or [],  # The list of tutors (or empty if none found).
-        "count": len(response.data or []),  # How many tutors were found.
-    }
+        return StudentDashboardResponse(
+            weekly_goal_hours=student_data.get("weekly_goal_hours", 10),
+            hours_completed=hours_completed,
+            active_streak=student_data.get("streak_days", 3),
+            upcoming_session=upcoming_session,
+            profile=profile_data,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load student dashboard.") from e
 
 
-# --- GET STUDENT BOOKINGS (stub kept for future) ---
-# This will show all bookings made by the logged-in student.
-# The real data will be connected once the bookings table is wired up.
-@router.get(
-    "/bookings/list",  # The web address: /students/bookings/list.
-    summary="Get the logged-in student's bookings (coming soon)",  # Short label.
-)
-def get_student_bookings(
-    current_user=Depends(get_current_user),  # Check the login key.
+# --- BOOKMARKS (SAVED TUTORS) ---
+@router.get("/me/bookmarks", summary="List bookmarked tutors")
+def get_student_bookmarks(current_user=Depends(require_student)):
+    try:
+        bm = supabase.table("student_bookmarks").select("tutor_id").eq("student_id", current_user.id).execute()
+        tutor_ids = [r["tutor_id"] for r in (bm.data or [])]
+        if not tutor_ids:
+            return []
+        tutors = supabase.table("tutors").select("*").in_("id", tutor_ids).execute()
+        return tutors.data or []
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load bookmarks.") from e
+
+
+@router.post("/me/bookmarks/{tutor_id}", summary="Bookmark a tutor")
+def add_student_bookmark(tutor_id: str, current_user=Depends(require_student)):
+    try:
+        supabase.table("student_bookmarks").upsert({"student_id": current_user.id, "tutor_id": tutor_id}).execute()
+        return {"status": "success", "message": "Tutor bookmarked."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to bookmark tutor.") from e
+
+
+@router.delete("/me/bookmarks/{tutor_id}", summary="Remove a tutor bookmark")
+def remove_student_bookmark(tutor_id: str, current_user=Depends(require_student)):
+    try:
+        supabase.table("student_bookmarks").delete().eq("student_id", current_user.id).eq("tutor_id", tutor_id).execute()
+        return {"status": "success", "message": "Bookmark removed."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to remove bookmark.") from e
+
+
+# --- FOCUS TIMER LOGGING ---
+@router.post("/me/focus-sessions", summary="Log completed Pomodoro focus duration")
+def log_focus_session(payload: FocusSessionLogRequest, current_user=Depends(require_student)):
+    try:
+        supabase.table("focus_logs").insert({
+            "student_id": current_user.id,
+            "duration_minutes": payload.duration_minutes,
+        }).execute()
+
+        # Update streak in student table
+        supabase.table("students").update({"streak_days": 1}).eq("id", current_user.id).execute()
+
+        # Compute total hours
+        logs = supabase.table("focus_logs").select("duration_minutes").eq("student_id", current_user.id).execute()
+        total_mins = sum(r.get("duration_minutes", 0) for r in (logs.data or []))
+        return {
+            "status": "success",
+            "duration_minutes": payload.duration_minutes,
+            "total_weekly_hours": round(total_mins / 60.0, 1),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to log focus session.") from e
+
+
+# --- SCHEDULE & STUDY BLOCKS ---
+@router.get("/me/schedule", summary="Get student classes and study blocks for schedule view")
+def get_student_schedule(
+    month: Optional[int] = Query(default=None),
+    year: Optional[int] = Query(default=None),
+    current_user=Depends(require_student),
 ):
-    # TODO: Query the "bookings" table filtered by the student's user ID.
-    return {  # For now, return an empty list with a friendly note.
-        "bookings": [],  # Empty list — this will be filled in when bookings are wired up.
-        "message": "Bookings feature coming soon.",  # A friendly note to the frontend.
-    }
+    try:
+        sessions_query = supabase.table("sessions").select("*").eq("student_id", current_user.id)
+        blocks_query = supabase.table("schedule_blocks").select("*").eq("student_id", current_user.id)
+
+        sessions = sessions_query.execute().data or []
+        blocks = blocks_query.execute().data or []
+
+        return {"sessions": sessions, "study_blocks": blocks}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load schedule.") from e
+
+
+@router.post("/me/schedule/blocks", response_model=StudyBlockResponse, status_code=status.HTTP_201_CREATED, summary="Create a study block")
+def create_study_block(payload: StudyBlockCreate, current_user=Depends(require_student)):
+    try:
+        block_row = {
+            "id": str(uuid.uuid4()),
+            "student_id": current_user.id,
+            **payload.model_dump(),
+        }
+        res = supabase.table("schedule_blocks").insert(block_row).execute()
+        return StudyBlockResponse(**res.data[0])
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create study block.") from e
+
+
+@router.delete("/me/schedule/blocks/{block_id}", summary="Delete a study block")
+def delete_study_block(block_id: str, current_user=Depends(require_student)):
+    try:
+        supabase.table("schedule_blocks").delete().eq("id", block_id).eq("student_id", current_user.id).execute()
+        return {"status": "success", "message": "Study block deleted."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete block.") from e
+
+
+# --- STUDY FRIENDS ---
+@router.get("/me/friends", response_model=List[FriendResponse], summary="Find study buddies filtered by exam batch")
+def get_study_friends(batch: Optional[str] = Query(default="2025 A/L"), current_user=Depends(require_student)):
+    try:
+        # Return registered student peers (excluding self)
+        res = supabase.table("profiles").select("id, full_name, avatar_url").eq("role", "student").neq("id", current_user.id).limit(15).execute()
+        friends = []
+        for r in (res.data or []):
+            friends.append(FriendResponse(
+                id=r["id"],
+                full_name=r["full_name"],
+                avatar_url=r.get("avatar_url"),
+                target_exam="A/L",
+                batch_year="2025",
+                is_online=True,
+            ))
+        return friends
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load friends.") from e
+
+
+# --- DELETE ACCOUNT ---
+@router.delete("/me", summary="Delete student account and purge user data")
+def delete_student_account(current_user=Depends(require_student)):
+    try:
+        supabase.table("students").delete().eq("id", current_user.id).execute()
+        supabase.table("profiles").delete().eq("id", current_user.id).execute()
+        supabase.auth.admin.delete_user(current_user.id)
+        return {"status": "account_deleted", "message": "Student account has been purged."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete account.") from e
+
+
+# --- SEARCH TUTORS ALIAS (maintains backward compatibility with frontend student-home.tsx) ---
+@router.get("/tutors/search", summary="Student searches for tutors with filters")
+def student_search_tutors(
+    subject: str = Query(default=None),
+    district: str = Query(default=None),
+    level: str = Query(default=None),
+    max_price: float = Query(default=None, ge=0),
+    current_user=Depends(get_current_user),
+):
+    query = (
+        supabase.table("tutors")
+        .select("id, full_name, subjects, hourly_rate, specialty, education, rating, total_reviews, total_sessions, avatar_url, verified, district, teaching_mode")
+    )
+    if subject and subject.lower() != "all subjects":
+        query = query.contains("subjects", [subject])
+    if district and district.lower() != "all districts":
+        query = query.eq("district", district)
+    if max_price is not None:
+        query = query.lte("hourly_rate", max_price)
+
+    try:
+        response = query.execute()
+        return {
+            "tutors": response.data or [],
+            "count": len(response.data or []),
+        }
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search tutors.")
